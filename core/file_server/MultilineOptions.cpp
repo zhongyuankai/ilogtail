@@ -37,6 +37,8 @@ bool MultilineOptions::Init(const Json::Value& config, const PipelineContext& ct
     } else if (mode == "JSON") {
         mMode = Mode::JSON;
         mIsMultiline = true;
+    } else if (mode == "TimeRule") {
+        mMode = Mode::TIME_RULE;
     } else if (!mode.empty() && mode != "custom") {
         PARAM_WARNING_DEFAULT(ctx.GetLogger(),
                               ctx.GetAlarm(),
@@ -136,6 +138,70 @@ bool MultilineOptions::Init(const Json::Value& config, const PipelineContext& ct
                                      ctx.GetLogstoreName(),
                                      ctx.GetRegion());
         } else if (mStartPatternRegPtr || mEndPatternRegPtr) {
+            mIsMultiline = true;
+        }
+    } else if (mMode == Mode::TIME_RULE) {
+        // StartFlagIndex
+        if (!GetOptionalIntParam(config, "Multiline.StartFlagIndex", mStartFlagIndex, errorMsg)) {
+            PARAM_WARNING_IGNORE(ctx.GetLogger(),
+                                 ctx.GetAlarm(),
+                                 errorMsg,
+                                 pluginName,
+                                 ctx.GetConfigName(),
+                                 ctx.GetProjectName(),
+                                 ctx.GetLogstoreName(),
+                                 ctx.GetRegion());
+        }
+
+        /// StartFlag
+        if (!GetOptionalStringParam(config, "Multiline.StartFlag", mStartFlag, errorMsg)) {
+            PARAM_WARNING_IGNORE(ctx.GetLogger(),
+                                 ctx.GetAlarm(),
+                                 errorMsg,
+                                 pluginName,
+                                 ctx.GetConfigName(),
+                                 ctx.GetProjectName(),
+                                 ctx.GetLogstoreName(),
+                                 ctx.GetRegion());
+        }
+
+        /// TimeFormatLength
+        if (!GetOptionalIntParam(config, "Multiline.TimeStringLength", mTimeStringLength, errorMsg)) {
+            PARAM_WARNING_IGNORE(ctx.GetLogger(),
+                                 ctx.GetAlarm(),
+                                 errorMsg,
+                                 pluginName,
+                                 ctx.GetConfigName(),
+                                 ctx.GetProjectName(),
+                                 ctx.GetLogstoreName(),
+                                 ctx.GetRegion());
+        }
+
+        /// TimeFormat 
+        if (!GetOptionalStringParam(config, "Multiline.TimeFormat", mTimeFormat, errorMsg)) {
+            PARAM_WARNING_IGNORE(ctx.GetLogger(),
+                                 ctx.GetAlarm(),
+                                 errorMsg,
+                                 pluginName,
+                                 ctx.GetConfigName(),
+                                 ctx.GetProjectName(),
+                                 ctx.GetLogstoreName(),
+                                 ctx.GetRegion());
+        }
+
+        if (mTimeStringLength <= 0 || mTimeFormat.empty() ) {
+            LOG_WARNING(ctx.GetLogger(),
+                        ("problem encountered in config parsing",
+                         "param TimeStringLength and TimeFormat exist non-zero or null value")(
+                            "action", "ignore multiline config")("module", pluginName)("config", ctx.GetConfigName()));
+            ctx.GetAlarm().SendAlarm(CATEGORY_CONFIG_ALARM,
+                                     "param Multiline.StartFlagIndex and StartFlag and TimeFormat exist non-zero or null value"
+                                     ": ignore multiline config, module: "
+                                         + pluginName + ", config: " + ctx.GetConfigName(),
+                                     ctx.GetProjectName(),
+                                     ctx.GetLogstoreName(),
+                                     ctx.GetRegion());
+        } else {
             mIsMultiline = true;
         }
     }

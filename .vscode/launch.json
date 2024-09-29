@@ -89,6 +89,32 @@
             "env": {
                 "LD_LIBRARY_PATH": "${workspaceFolder}/pkg/logtail"
             }
-        }
+        },
+        {
+            "name": "(gdb) Launch iLogtail unittest",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/core/build/unittest/common/common_simple_utils_unittest",
+            "args": [
+                "-ilogtail_disable_core=false"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/core/build/unittest/common",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
     ]
 }

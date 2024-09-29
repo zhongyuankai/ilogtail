@@ -31,6 +31,13 @@ const std::string LOG_END_STRING = "    ...23 more";
 const std::string LOG_END_REGEX = R"(\s*\.\.\.\d+ more)";
 const std::string LOG_UNMATCH = "unmatch log";
 
+/// 测试基于时间规则的多行解析
+const std::string LOG_TIME_RULE_STRING = "[Error][../file.h][2024-09-26 15:04:11]_undef||traceid=xxx||spanid=xxx||hintCode=0||_msg=redis setex";
+const std::string LOG_MODE = "TimeRule";
+const int32_t LOG_START_FLAG_INDEX = 1;
+const std::string LOG_START_FLAG = "][";
+const int32_t LOG_TIME_STRING_LENGTH = 19;
+const std::string LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S";
 
 class ProcessorSplitMultilineLogDisacardUnmatchUnittest : public ::testing::Test {
 public:
@@ -39,6 +46,7 @@ public:
     void TestLogSplitWithBegin();
     void TestLogSplitWithContinueEnd();
     void TestLogSplitWithEnd();
+    void TestLogSplitWithTimeRule();
 
 protected:
     void SetUp() override { mContext.SetConfigName("project##config_0"); }
@@ -52,6 +60,7 @@ UNIT_TEST_CASE(ProcessorSplitMultilineLogDisacardUnmatchUnittest, TestLogSplitWi
 UNIT_TEST_CASE(ProcessorSplitMultilineLogDisacardUnmatchUnittest, TestLogSplitWithBegin)
 UNIT_TEST_CASE(ProcessorSplitMultilineLogDisacardUnmatchUnittest, TestLogSplitWithContinueEnd)
 UNIT_TEST_CASE(ProcessorSplitMultilineLogDisacardUnmatchUnittest, TestLogSplitWithEnd)
+UNIT_TEST_CASE(ProcessorSplitMultilineLogDisacardUnmatchUnittest, TestLogSplitWithTimeRule)
 
 void ProcessorSplitMultilineLogDisacardUnmatchUnittest::TestLogSplitWithBeginContinue() {
     // make config
@@ -2703,6 +2712,317 @@ void ProcessorSplitMultilineLogKeepUnmatchUnittest::TestLogSplitWithEnd() {
     APSARA_TEST_EQUAL_FATAL(1 + 0 + 2, ProcessorSplitMultilineLogStringNative.mProcMatchedLinesCnt->GetValue());
     APSARA_TEST_EQUAL_FATAL(0 + 1 + 1, ProcessorSplitMultilineLogStringNative.mProcUnmatchedLinesCnt->GetValue());
 }
+
+void ProcessorSplitMultilineLogDisacardUnmatchUnittest::TestLogSplitWithTimeRule() {
+        // make config
+    Json::Value config;
+    config["Mode"] = LOG_MODE;
+    config["StartFlagIndex"] = LOG_START_FLAG_INDEX;
+    config["StartFlag"] = LOG_START_FLAG;
+    config["TimeStringLength"] = LOG_TIME_STRING_LENGTH;
+    config["TimeFormat"] = LOG_TIME_FORMAT;
+    config["UnmatchedContentTreatment"] = "single_line";
+
+    // ProcessorSplitMultilineLogStringNative
+    ProcessorSplitMultilineLogStringNative ProcessorSplitMultilineLogStringNative;
+    ProcessorSplitMultilineLogStringNative.SetContext(mContext);
+    ProcessorSplitMultilineLogStringNative.SetMetricsRecordRef(ProcessorSplitMultilineLogStringNative::sName, "1");
+    APSARA_TEST_TRUE_FATAL(ProcessorSplitMultilineLogStringNative.Init(config));
+    // case: unmatch + start
+    // input: 1 event, 2 lines
+    // output: 2 event, 2 line
+    {
+        auto sourceBuffer = std::make_shared<SourceBuffer>();
+        PipelineEventGroup eventGroup(sourceBuffer);
+        std::stringstream inJson;
+        inJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_UNMATCH << R"(\n)" << LOG_TIME_RULE_STRING << R"(",
+                        "__file_offset__": 0
+                    },
+                    "timestamp" : 12345678901,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        eventGroup.FromJsonString(inJson.str());
+
+        // run test function
+        ProcessorSplitMultilineLogStringNative.Process(eventGroup);
+
+        /// Avoid timing interference for unmatched rows
+        const auto & events = eventGroup.GetEvents();
+        auto & event = const_cast<PipelineEvent &>(events[0].Cast<PipelineEvent>());
+        event.SetTimestamp(0);
+
+        // judge result
+        std::stringstream expectJson;
+        expectJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_UNMATCH << R"("
+                    },
+                    "timestamp" : 0,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                },
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_TIME_RULE_STRING << R"("
+                    },
+                    "timestamp" : 1727363051,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        std::string outJson = eventGroup.ToJsonString();
+        APSARA_TEST_STREQ(CompactJson(expectJson.str()).c_str(), CompactJson(outJson).c_str());
+    }
+    // case: unmatch
+    // input: 1 event, 1 line
+    // output: 1 event, 1 line
+    {
+        auto sourceBuffer = std::make_shared<SourceBuffer>();
+        PipelineEventGroup eventGroup(sourceBuffer);
+        std::stringstream inJson;
+        inJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_UNMATCH << R"(",
+                        "__file_offset__": 0
+                    },
+                    "timestamp" : 12345678901,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        eventGroup.FromJsonString(inJson.str());
+
+        // run test function
+        ProcessorSplitMultilineLogStringNative.Process(eventGroup);
+
+        /// Avoid timing interference for unmatched rows
+        const auto & events = eventGroup.GetEvents();
+        auto & event = const_cast<PipelineEvent &>(events[0].Cast<PipelineEvent>());
+        event.SetTimestamp(0);
+
+        // judge result
+        std::stringstream expectJson;
+        expectJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_UNMATCH << R"("
+                    },
+                    "timestamp" : 0,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        std::string outJson = eventGroup.ToJsonString();
+        APSARA_TEST_STREQ(CompactJson(expectJson.str()).c_str(), CompactJson(outJson).c_str());
+
+    }
+    // case: start + start
+    // input: 1 event, 2 lines
+    // output: 2 events, 2 lines
+    {
+        auto sourceBuffer = std::make_shared<SourceBuffer>();
+        PipelineEventGroup eventGroup(sourceBuffer);
+        std::stringstream inJson;
+        inJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_TIME_RULE_STRING << R"(\n)" << LOG_TIME_RULE_STRING << R"(",
+                        "__file_offset__": 0
+                    },
+                    "timestamp" : 12345678901,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        eventGroup.FromJsonString(inJson.str());
+
+        // run test function
+        ProcessorSplitMultilineLogStringNative.Process(eventGroup);
+        // judge result
+        std::stringstream expectJson;
+        expectJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_TIME_RULE_STRING << R"("
+                    },
+                    "timestamp" : 1727363051,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                },
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_TIME_RULE_STRING << R"("
+                    },
+                    "timestamp" : 1727363051,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        std::string outJson = eventGroup.ToJsonString();
+        APSARA_TEST_STREQ(CompactJson(expectJson.str()).c_str(), CompactJson(outJson).c_str());
+    }
+    // case: start + unmatch
+    // input: 1 event, 2 lines
+    // output: 1 event, 2 lines
+    {
+        auto sourceBuffer = std::make_shared<SourceBuffer>();
+        PipelineEventGroup eventGroup(sourceBuffer);
+        std::stringstream inJson;
+        inJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_TIME_RULE_STRING << R"(\n)" << LOG_UNMATCH << R"(",
+                        "__file_offset__": 0
+                    },
+                    "timestamp" : 12345678901,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        eventGroup.FromJsonString(inJson.str());
+
+        // run test function
+        ProcessorSplitMultilineLogStringNative.Process(eventGroup);
+        // judge result
+        std::stringstream expectJson;
+        expectJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_TIME_RULE_STRING << R"(\n)" << LOG_UNMATCH << R"("
+                    },
+                    "timestamp" : 1727363051,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        std::string outJson = eventGroup.ToJsonString();
+        APSARA_TEST_STREQ(CompactJson(expectJson.str()).c_str(), CompactJson(outJson).c_str());
+    }
+    // case: unmatch + start + unmatch + unmatch
+    // input: 1 event, 4 lines
+    // output: 2 event, 4 lines
+    {
+        auto sourceBuffer = std::make_shared<SourceBuffer>();
+        PipelineEventGroup eventGroup(sourceBuffer);
+        std::stringstream inJson;
+        inJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_UNMATCH << R"(\n)" << LOG_TIME_RULE_STRING << R"(\n)" << LOG_UNMATCH << R"(\n)" << LOG_UNMATCH
+               << R"(",
+                        "__file_offset__": 0
+                    },
+                    "timestamp" : 12345678901,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        eventGroup.FromJsonString(inJson.str());
+        // run test function
+        ProcessorSplitMultilineLogStringNative.Process(eventGroup);
+
+        /// Avoid timing interference for unmatched rows
+        const auto & events = eventGroup.GetEvents();
+        auto & event = const_cast<PipelineEvent &>(events[0].Cast<PipelineEvent>());
+        event.SetTimestamp(0);
+
+        // judge result
+        std::stringstream expectJson;
+        expectJson << R"({
+            "events" :
+            [
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+               << LOG_UNMATCH << R"("
+                    },
+                    "timestamp" : 0,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                },
+                {
+                    "contents" :
+                    {
+                        "content" : ")"
+                   << LOG_TIME_RULE_STRING << R"(\n)" << LOG_UNMATCH << R"(\n)" << LOG_UNMATCH << R"("
+                    },
+                    "timestamp" : 1727363051,
+                    "timestampNanosecond" : 0,
+                    "type" : 1
+                }
+            ]
+        })";
+        std::string outJson = eventGroup.ToJsonString();
+        APSARA_TEST_STREQ(CompactJson(expectJson.str()).c_str(), CompactJson(outJson).c_str());
+    }
+
+    // metric
+    APSARA_TEST_EQUAL_FATAL(1 + 0 + 2 + 1 + 1,
+                            ProcessorSplitMultilineLogStringNative.mProcMatchedEventsCnt->GetValue());
+    APSARA_TEST_EQUAL_FATAL(1 + 0 + 2 + 2 + 3, ProcessorSplitMultilineLogStringNative.mProcMatchedLinesCnt->GetValue());
+    APSARA_TEST_EQUAL_FATAL(1 + 1 + 0 + 0 + 1,
+                            ProcessorSplitMultilineLogStringNative.mProcUnmatchedLinesCnt->GetValue());
+
+}
+
+
 } // namespace logtail
 
 UNIT_TEST_MAIN

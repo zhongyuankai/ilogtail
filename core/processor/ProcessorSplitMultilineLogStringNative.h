@@ -54,7 +54,8 @@ private:
                         StringBuffer& sourceKey,
                         const LogEvent& sourceEvent,
                         PipelineEventGroup& logGroup,
-                        EventsContainer& newEvents);
+                        EventsContainer& newEvents,
+                        time_t logTime = -1);
     void HandleUnmatchLogs(const StringView& sourceVal,
                            long sourceoffset,
                            StringBuffer& sourceKey,
@@ -62,7 +63,8 @@ private:
                            PipelineEventGroup& logGroup,
                            EventsContainer& newEvents,
                            StringView logPath,
-                           int* unmatchLines);
+                           int* unmatchLines,
+                           time_t logTime = -1);
 
     StringView GetNextLine(StringView log, size_t begin);
 

@@ -120,6 +120,8 @@ func (saslConfig *SaslConfig) ConfigureSasl(saramaConfig *sarama.Config) error {
 	saramaConfig.Net.SASL.Enable = true
 	saramaConfig.Net.SASL.User = saslConfig.Username
 	saramaConfig.Net.SASL.Password = saslConfig.Password
+	/// SASLHandshakeV1 认证公司的kafka会失败
+	saramaConfig.Net.SASL.Version = sarama.SASLHandshakeV0;
 	switch strings.ToUpper(saslConfig.SaslMechanism) { // try not to force users to use all upper case
 	case "":
 		// SASL is not enabled
