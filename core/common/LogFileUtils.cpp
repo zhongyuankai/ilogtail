@@ -2,6 +2,8 @@
 #include "common/Strptime.h"
 
 #include <vector>
+#include <iostream>
+#include <boost/lexical_cast.hpp>
 
 namespace logtail {
 
@@ -46,6 +48,15 @@ StringView getTimeStringFromLineByIndex(const char* buffer, size_t size, const s
 }
 
 time_t parseTime(const StringView & timeString, const std::string & timeFormat) {
+    if (timeFormat == "LongType-Time") {
+        try {
+            long long millis = boost::lexical_cast<long long>(timeString);
+            return static_cast<time_t>(millis / 1000);
+        } catch (const boost::bad_lexical_cast & e) {
+            return -1;
+        }
+    }
+
     struct tm tm;
     memset(&tm, 0, sizeof(tm));
     if (auto ret = strptime(timeString.data(), timeFormat.c_str(), &tm); ret != NULL) {
@@ -56,47 +67,22 @@ time_t parseTime(const StringView & timeString, const std::string & timeFormat) 
 }
 
 std::string convertJavaFormatToStrptime(const std::string & javaFormat) {
-    static const std::vector<std::pair<std::string, std::string>> formatMap = {
-        {"yyyy", "%Y"},    // 四位数年份
-        {"yy", "%y"},      // 两位数年份
-        {"MM", "%m"},      // 月份（01-12）
-        {"M", "%m"},       // 月份（1-12）
-        {"dd", "%d"},      // 日期（01-31）
-        {"d", "%d"},       // 日期（1-31）
-        {"HH", "%H"},      // 24小时制小时（00-23）
-        {"H", "%H"},       // 24小时制小时（0-23）
-        {"hh", "%I"},      // 12小时制小时（01-12）
-        {"h", "%I"},       // 12小时制小时（1-12）
-        {"mm", "%M"},      // 分钟（00-59）
-        {"ss", "%S"},      // 秒（00-59）
-        {"SSS", "%f"},     // 毫秒（000-999）
-        {"Z", "%z"},       // 时区（+hhmm或-hhmm）
-        {"a", "%p"},       // AM/PM
-    };
-
-    std::string cFormat;
-    size_t pos = 0;
-
-    // 遍历 Java 格式字符串
-    while (pos < javaFormat.size()) {
-        bool matched = false;
-
-        for (const auto & [java, c] : formatMap) {
-            if (javaFormat.compare(pos, java.size(), java) == 0) {
-                cFormat.append(c);
-                pos += java.size();
-                matched = true;
-                break; // 找到后跳出循环，继续下一个字符
-            }
-        }
-
-        // 处理未匹配的情况（添加原始字符）
-        if (!matched) {
-            cFormat.push_back(javaFormat[pos]);
-            pos++;
-        }
+    if (javaFormat == "NoLogTime") {
+        return "NoLogTime";
+    } else if (javaFormat == "LongType-Time") {
+        return "LongType-Time";
+    } else if (javaFormat == "yyyy-MM-dd HH:mm:ss") {
+        return "%Y-%m-%d %H:%M:%S";
+    } else if (javaFormat == "yyyy-MM-dd'T'HH:mm:ss") {
+        return "%Y-%m-%dT%H:%M:%S";
+    } else if (javaFormat == "yyyy-MM-dd'T'HH:mm:ss.SSS") {
+        return "%Y-%m-%dT%H:%M:%S";
+    } else if (javaFormat == "yyyy/MM/dd HH:mm:ss") {
+        return "%Y/%m/%d %H:%M:%S";
+    } else if (javaFormat == "dd/MMM/yyyy:HH:mm:ss") {
+        return "%d/%b/%Y:%H:%M:%S";
     }
-    return cFormat;
+    return "";
 }
 
 }

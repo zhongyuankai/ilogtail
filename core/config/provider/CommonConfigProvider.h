@@ -70,6 +70,13 @@ private:
     UpdateRemoteConfig(const google::protobuf::RepeatedPtrField<configserver::proto::ConfigCheckResult>& checkResults,
                        const google::protobuf::RepeatedPtrField<configserver::proto::ConfigDetail>& configDetails);
 
+    /// swan config update
+    void GetSwanConfigUpdate();
+    std::unordered_map<std::string, std::string> getLocalConfigs();
+    void processConfigChange(std::unordered_map<std::string, std::string> & addedConfigs,
+                             std::unordered_map<std::string, std::string> & updateConfigs,
+                             std::unordered_map<std::string, std::string> & deleteConfigs);
+
     std::vector<ConfigServerAddress> mConfigServerAddresses;
     int mConfigServerAddressId = 0;
     std::vector<std::string> mConfigServerTags;

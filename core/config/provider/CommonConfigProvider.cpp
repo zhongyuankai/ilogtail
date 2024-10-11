@@ -25,6 +25,8 @@
 #include "common/LogtailCommonFlags.h"
 #include "common/StringTools.h"
 #include "common/version.h"
+#include "common/FileSystemUtil.h"
+#include "config/provider/SwanConfigProvider.h"
 #include "logger/Logger.h"
 #include "monitor/LogFileProfiler.h"
 #include "sdk/Common.h"
@@ -104,6 +106,7 @@ void CommonConfigProvider::CheckUpdateThread() {
         int32_t curTime = time(NULL);
         if (curTime - lastCheckTime >= INT32_FLAG(config_update_interval)) {
             GetConfigUpdate();
+            GetSwanConfigUpdate();
             lastCheckTime = curTime;
         }
         if (mStopCV.wait_for(lock, std::chrono::seconds(3), [this]() { return !mIsThreadRunning; })) {
@@ -335,5 +338,109 @@ void CommonConfigProvider::UpdateRemoteConfig(
         }
     }
 }
+
+void CommonConfigProvider::GetSwanConfigUpdate() {
+    LOG_DEBUG(sLogger, ("begin to get swan config ...", ""));
+
+    std::unordered_map<std::string, std::string> configs;
+    try {
+        configs = SwanConfigProvider::GetInstance()->getConfigs();
+    } catch (const runtime_error& e) {
+        LOG_ERROR(sLogger, ("get config from agent manager error ...", std::string(e.what())));
+        return;
+    }
+
+    std::unordered_map<std::string, std::string> oldConfigs = getLocalConfigs();
+
+    std::unordered_map<std::string, std::string> addedConfigs;
+    std::unordered_map<std::string, std::string> deleteConfigs;
+    std::unordered_map<std::string, std::string> updateConfigs;
+
+    // 获取新增的配置
+    for (const auto & [configName, configContent] : configs) {
+        if (auto it = oldConfigs.find(configName); it == oldConfigs.end()) {
+            addedConfigs[configName] = configContent;
+        }
+    }
+
+    // 获取删除的配置
+    for (const auto & [configName, configContent] : oldConfigs) {
+        if (auto it = configs.find(configName); it == configs.end()) {
+            deleteConfigs[configName] = configContent;
+        }
+    }
+
+    // 获取更新的配置
+    for (const auto & [configName, configContent]: oldConfigs) {
+        if (auto it = configs.find(configName); it != configs.end()) {
+            std::string & newConfigContent = it->second;
+
+            if (newConfigContent != configContent) {
+                updateConfigs[configName] = newConfigContent;
+            }
+        }
+    }
+
+    // 处理新增、更新、删除的配置
+    processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
+    LOG_DEBUG(sLogger, ("end to convert swan config......", ""));
+}
+
+std::unordered_map<std::string, std::string> CommonConfigProvider::getLocalConfigs() {
+    std::lock_guard<mutex> lock(mMux);
+
+    std::vector<std::string> fileNames;
+    GetAllFiles(mSourceDir, "*.yaml", fileNames);
+
+    std::unordered_map<std::string, std::string> configs;
+    for (const auto &fileName: fileNames) {
+        std::string fileContent;
+        ReadFileContent(mSourceDir / fileName, fileContent, 1024 * 1024 * 1024);
+        configs[fileName] = std::move(fileContent);
+    }
+
+    return configs;
+}
+
+void CommonConfigProvider::processConfigChange(std::unordered_map<std::string, std::string> & addedConfigs,
+                                               std::unordered_map<std::string, std::string> & updateConfigs,
+                                               std::unordered_map<std::string, std::string> & deleteConfigs) {
+    auto writeFile = [&](const std::string & fileName, const std::string & content) {
+        std::filesystem::path filePath = mSourceDir / fileName;
+        std::filesystem::path tmpFilePath = mSourceDir / (fileName + ".new");
+
+        std::ofstream fout(tmpFilePath);
+        if (!fout) {
+            LOG_WARNING(sLogger, ("failed to open config file", filePath.string()));
+            return;
+        }
+        fout << content;
+        fout.close();
+
+        error_code ec;
+        std::filesystem::rename(tmpFilePath, filePath, ec);
+        if (ec) {
+            LOG_WARNING(sLogger,
+                    ("failed to dump config file",
+                    filePath.string())("error code", ec.value())("error msg", ec.message()));
+            std::filesystem::remove(tmpFilePath, ec);
+        }
+    };
+
+    std::lock_guard<mutex> lock(mMux);
+    for (const auto & [fileName, content]: addedConfigs) {
+        writeFile(fileName, content);
+    }
+
+    for (const auto & [fileName, content]: updateConfigs) {
+        writeFile(fileName, content);
+    }
+
+    for (const auto & [fileName, content]: deleteConfigs) {
+        error_code ec;
+        std::filesystem::remove(mSourceDir / fileName, ec);
+    }
+}
+
 
 } // namespace logtail

@@ -54,6 +54,7 @@
 #endif
 #else
 #include "config/provider/CommonConfigProvider.h"
+#include "config/provider/SwanConfigProvider.h"
 #endif
 
 DEFINE_FLAG_BOOL(ilogtail_disable_core, "disable core in worker process", true);
@@ -206,6 +207,7 @@ void Application::Start() {
     EnterpriseConfigProvider::GetInstance()->Init("enterprise");
     LegacyConfigProvider::GetInstance()->Init("legacy");
 #else
+    SwanConfigProvider::GetInstance()->Init();
     CommonConfigProvider::GetInstance()->Init("common");
 #endif
 

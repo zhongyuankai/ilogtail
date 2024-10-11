@@ -60,6 +60,7 @@ set(DEP_NAME_LIST
         crypto
         leveldb
         uuid
+        restclient-cpp
         )
 
 if (NOT NO_TCMALLOC)
@@ -375,6 +376,11 @@ macro(link_uuid target_name)
     elseif (UNIX)
         target_link_libraries(${target_name} uuid)
     endif ()
+endmacro()
+
+# restclient-cpp
+macro(link_restclientcpp target_name)
+    target_link_libraries(${target_name} "${restclient-cpp_${LIBRARY_DIR_SUFFIX}}/librestclient-cpp.a")
 endmacro()
 
 macro(link_spl target_name)
