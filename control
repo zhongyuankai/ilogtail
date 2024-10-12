@@ -1,0 +1,277 @@
+#!/bin/bash
+workspace=$(cd $(dirname $0) && pwd)
+cd $workspace
+
+logdir=${workspace}/log
+mkdir -p ${logdir} &>/dev/null
+
+app=ilogtail
+pidfile=var/app.pid
+lockfile=var/lock.tmp
+logfile=${logdir}/app.log
+zjyfile=/home/odin/container-cluster
+
+HOME_DIR=/home/logger
+
+USER=$(id -un)
+STATUS_URL="http://127.0.0.1:2024/ilogtail/version"
+PID_URL="http://127.0.0.1:2024/ilogtail/pid"
+OLD_PATH="/home/logger/ilogtail"
+AGENT_CGEXE="/home/odin/tools/odin-super-agent-cgexe"
+TASK_NAME=ilogtail
+DDCLOUD_PATH="/home/odin/container-host"
+LINUX_VERSION="7.2"
+ZJY_OFFLINE_TAG="\"cluster\":\"zjy-offline\""
+
+
+function linux_version() {
+    linux_version=`cat /etc/redhat-release`
+    result=$(echo $linux_version | grep "6.7")
+    if [ "X$result" != "X" ]; then
+        LINUX_VERSION="6.7"
+    fi
+}
+
+function install() {
+    if [ -f ${AGENT_CGEXE} ];then
+        # 容器和物理机使用不同的启动内存cgroup参数
+        if [[ "X${HOSTNAME}" =~ Xddcloud-.* ]]; then
+            /home/odin/tools/odin-super-agent-cgexe -d ilogtail-agent _s_config single_cpu=5 mem=5000
+        else
+            /home/odin/tools/odin-super-agent-cgexe -d ilogtail-agent _s_config single_cpu=4 mem=4000
+        fi
+    else
+        echo "${AGENT_CGEXE} not found!"
+    fi
+}
+
+function initialize() {
+    if [ "X$USER" == "Xroot" ];then
+        if [ ! -L ${OLD_PATH} ];then
+            ps axu| grep ilogtail| grep -v grep | awk '{print $2}' | xargs kill -9  > /dev/null 2>&1
+
+            rm -rf ${OLD_PATH}
+            ln -s ${workspace} ${OLD_PATH}
+        fi
+    fi
+
+    mkdir -p ${workspace}/var &>/dev/null
+    STD_LOG="${workspace}/log/${app}-out.log"
+    ERR_LOG="${workspace}/log/${app}-err.log"
+
+    if [ ! -d  "${HOME_DIR}/ilogtail_logs" ]; then
+        rm -rf  "${HOME_DIR}/ilogtail_logs"
+        mkdir -p "${HOME_DIR}/ilogtail_logs"
+    fi
+    chown -R logger.logger ${HOME_DIR}/ilogtail_logs
+}
+
+function start() {
+    #agent cgroup测试, 隔离资源组是否OK
+    testResult=`${AGENT_CGEXE} swan-agent echo "test cgexe ok"`
+
+    linux_version
+
+    initialize
+
+    del_lockfile
+
+    exec 300>$lockfile
+
+    flock -n 300 || {
+       echo "----------------------Another user has obtained the file lock，please wait..------------------" >> $logfile
+       exit 1;
+    }
+
+    if [ "X$USER" == "Xlogger" ];then
+        if [ "x_$testResult" == "x_test cgexe ok" ]; then
+            nohup ${AGENT_CGEXE} -d ilogtail-agent "${workspace}/ilogtail" > $STD_LOG 2> $ERR_LOG &
+        else
+            nohup "${workspace}/ilogtail" > $STD_LOG 2> $ERR_LOG &
+        fi
+    else
+        chown -R logger.logger ${workspace}
+        chown -R logger.logger ${workspace}/
+        chown -R logger.logger ${OLD_PATH}
+        chown -R logger.logger ${OLD_PATH}/
+        chown logger.logger /home/odin/super-agent/data/install/private/ilogtail-agent -R
+        if [ "x_$testResult" == "x_test cgexe ok" ]; then
+            su - logger -c "eval 'nohup ${AGENT_CGEXE} -d ilogtail-agent ${workspace}/ilogtail > $STD_LOG 2> $ERR_LOG &'"
+        else
+            su - logger -c "eval 'nohup ${workspace}/ilogtail > $STD_LOG 2> $ERR_LOG &'"
+        fi
+    fi
+
+    local timeout=10
+    for(( i =0; i< $timeout; i++ ));do
+        sleep 1
+        local pid=`curl --connect-timeout 1 --max-time 3 -s $PID_URL`
+        if [ "_x$pid" != "_x" ];then
+            break;
+        fi
+        if [ $i -eq $((timeout-1)) ];then
+            echo "$app start faild!"
+            exit
+        fi
+    done
+
+    local pid_dir="/proc/${pid}"
+    if [ -d $pid_dir ]; then
+        echo "start ok, pid=$pid"
+    else
+        echo "start failed"
+        exit 1
+    fi
+}
+
+function stop() {
+    local timeout=60
+    pid=$(get_pid)
+    if [ "$pid" == "" ];then
+        echo "$app is stopped!"
+        echo "----------------------$app is stopped!------------------" >> $logfile
+        return 0;
+    fi
+    for (( i=0; i < $timeout; i++ ));do
+
+        if [ $i -eq $((timeout - 5)) ];then
+            echo "kill -9 ${pid}"
+            echo "----------------------kill -9 ${pid}------------------" >> $logfile
+            kill -9 ${pid} &>> $logfile
+        else
+            echo "kill ${pid}"
+            echo "----------------------kill ${pid}------------------" >> $logfile
+            kill ${pid} &>> $logfile
+        fi
+
+        check_pid
+        if [ $? -eq 0 ];then
+            return 0
+        fi
+        sleep 1
+     done
+}
+
+function restart() {
+    stop
+    sleep 1
+    start
+}
+
+function status() {
+    HTTP_CODE=$(curl -s -o /dev/null -s -w "%{http_code}\n" $STATUS_URL)
+    if [ "x_200" == "x_${HTTP_CODE}" ];then
+        echo -n "running, http code: ${HTTP_CODE}"
+    else
+        echo "stopped"
+    fi
+
+}
+
+function version() {
+    # version_file="${workspace}/conf/settings.properties"
+    # test -f $version_file && cat $version_file | grep "message.version" | cut -d "=" -f 2 || echo "$version_file not found!"
+    running_version
+}
+
+function running_version() {
+    echo "----------------------$(date)-${STATUS_URL}------------------" >> $logfile
+    local timeout=10
+    for ((i=0;i<$timeout;i++));do
+        sleep 1
+        response=$(curl --connect-timeout 1 --max-time 3 -s $STATUS_URL)
+        test -n "$response" && break || ( test $i == 9 && echo "curl $STATUS_URL request faild , timeout $i second!" )
+    done
+    echo $response
+}
+
+function get_pid() {
+    local pid=$(curl --connect-timeout 1 --max-time 3 -s $PID_URL)
+    expr $pid + 0 &>/dev/null
+    if [ $? != 0 ];then
+        echo "---------------------- get pid by http service failed, because pid is not a integer ------------------" >> $logfile
+        pid=""
+    fi
+    echo $pid
+    echo "----------------------pid:$pid------------------" >> $logfile
+}
+
+function check_pid() {
+    if [ "x_" != "x_${pid}" ]; then
+        running=$(ps -p ${pid}|grep -v "PID TTY" |wc -l)
+        return ${running}
+    fi
+    return 0
+}
+
+# delete file lock, and kill related process
+function del_lockfile() {
+    local timeout=10
+
+    if [ -f $lockfile ]; then
+        rm -f $lockfile
+    fi
+
+    link_path="${workspace}/${lockfile}"
+    real_path=$(readlink -f $link_path)  # 获取lockfile的真实绝对路径
+
+    for (( i=0; i < $timeout; i++ ));do
+        lock_file_pid=$(lsof -u logger 2>/dev/null | grep "${real_path}" | awk '{print $2}')
+
+        if [ "$lock_file_pid" == "" ];then
+            echo "$lockfile is deleted, related process is killed"
+            echo "----------------------$lockfile is deleted!------------------" >> $logfile
+            return 0;
+        fi
+
+        if [ $i -eq $((timeout - 5)) ];then
+            echo "kill -9 ${lock_file_pid}"
+            echo "----------------------kill -9 ${lock_file_pid}------------------" >> $logfile
+            kill -9 ${lock_file_pid} &>> $logfile
+        else
+            echo "kill ${lock_file_pid}"
+            echo "----------------------kill ${lock_file_pid}------------------" >> $logfile
+            kill ${lock_file_pid} &>> $logfile
+        fi
+
+        sleep 1
+     done
+}
+
+## usage
+function usage() {
+    echo "$0 start|stop|restart|status|tail|version|running_version|install"
+}
+
+## main
+action=$1
+case $action in
+    "start" )
+        restart
+        ;;
+    "stop" )
+        stop
+        ;;
+    "restart" )
+        restart
+        ;;
+    ## other
+    "install" )
+        install
+        ;;
+    "status" )
+        status
+        ;;
+    "version" )
+        version
+        ;;
+    "running_version" )
+        running_version
+        ;;
+    "pid" )
+        get_pid
+        ;;
+    * )
+        usage
+        ;;
+esac

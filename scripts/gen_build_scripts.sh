@@ -40,6 +40,7 @@ ENABLE_STATIC_LINK_CRT=${ENABLE_STATIC_LINK_CRT:-OFF}
 WITHOUTGDB==${WITHOUTGDB:-OFF}
 BUILD_SCRIPT_FILE=$GENERATED_HOME/gen_build.sh
 COPY_SCRIPT_FILE=$GENERATED_HOME/gen_copy_docker.sh
+COPY_LOCAL_SCRIPT_FILE=$GENERATED_HOME/gen_copy_local.sh
 MAKE_JOBS=${MAKE_JOBS:-$(nproc)}
 
 function generateBuildScript() {
@@ -76,7 +77,7 @@ EOF
     done
   fi
 
-  echo "echo 'StrictHostkeyChecking no' >> /etc/ssh/ssh_config" >> $BUILD_SCRIPT_FILE
+#  echo "echo 'StrictHostkeyChecking no' >> /etc/ssh/ssh_config" >> $BUILD_SCRIPT_FILE
 
   chmod 755 $BUILD_SCRIPT_FILE
   if [ $CATEGORY = "plugin" ]; then
@@ -119,6 +120,20 @@ function generateCopyScript() {
   echo 'docker rm -v "$id"' >>$COPY_SCRIPT_FILE
 }
 
+function generateCopyLocalScript() {
+  if [ $CATEGORY = "all" ]; then
+    rm -rf $COPY_SCRIPT_FILE && echo -e "#!/bin/bash\nset -xue\nset -o pipefail\n" >$COPY_LOCAL_SCRIPT_FILE && chmod 755 $COPY_LOCAL_SCRIPT_FILE
+    echo 'OUT_DIR='${OUT_DIR}'/' >>$COPY_LOCAL_SCRIPT_FILE
+
+    echo 'cp ./core/build/ilogtail $OUT_DIR' >>$COPY_LOCAL_SCRIPT_FILE
+    echo 'cp ./core/build/go_pipeline/libPluginAdapter.so $OUT_DIR' >>$COPY_LOCAL_SCRIPT_FILE
+
+    echo 'cp ilogtail_config.json $OUT_DIR' >>$COPY_LOCAL_SCRIPT_FILE
+    echo 'cp control $OUT_DIR' >>$COPY_LOCAL_SCRIPT_FILE
+  fi
+}
+
 mkdir -p $GENERATED_HOME
 generateBuildScript
 generateCopyScript
+generateCopyLocalScript

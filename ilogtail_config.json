@@ -1,0 +1,12 @@
+{
+    "cpu_usage_limit": 10,
+    "mem_usage_limit":6144,
+    "process_thread_count": 8,
+    "max_bytes_per_sec": 629145600,
+    "send_request_concurrency":80,
+    "ilogtail_disable_core": false,
+    "agent_manager_physical_config_api": "http://10.88.129.57:8000/agent-manager-gz/api/v2/agents/config/host",
+    "agent_manager_container_config_api": "http://10.88.129.57:8000/agent-manager-gz/api/v5/agents/config/model",
+    "ddcloud_pods_api": "http://127.0.0.1:8031/v1/data/pods",
+    "ddcloud_pods_dir_map_api": "http://127.0.0.1:8031/v1/data/pod/dirmap"
+}

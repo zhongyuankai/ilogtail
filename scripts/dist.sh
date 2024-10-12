@@ -36,13 +36,15 @@ ARCH=$(arch)
 
 # prepare dist dir
 mkdir -p "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
-cp LICENSE README.md "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
+# cp LICENSE README.md "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/libPluginAdapter.so" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/libPluginBase.so" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail_config.json" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
-cp -a "${ROOTDIR}/${OUT_DIR}/config/local" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
-if file "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail" | grep x86-64; then ./scripts/download_ebpflib.sh "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"; fi
+cp "${ROOTDIR}/${OUT_DIR}/control" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
+
+# cp -a "${ROOTDIR}/${OUT_DIR}/config/local" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
+# if file "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail" | grep x86-64; then ./scripts/download_ebpflib.sh "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"; fi
 
 # Splitting debug info at build time with -gsplit-dwarf does not work with current gcc version
 # Strip binary to reduce size here

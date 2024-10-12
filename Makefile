@@ -216,8 +216,10 @@ unittest_pluginmanager: clean import_plugins
 .PHONY: all
 all: clean import_plugins
 	./scripts/gen_build_scripts.sh all $(GENERATED_HOME) $(VERSION) $(BUILD_REPOSITORY) $(OUT_DIR) $(DOCKER_BUILD_EXPORT_GO_ENVS) $(DOCKER_BUILD_COPY_GIT_CONFIGS) $(PLUGINS_CONFIG_FILE) $(GO_MOD_FILE)
-	./scripts/docker_build.sh build $(GENERATED_HOME) $(VERSION) $(BUILD_REPOSITORY) false $(DOCKER_BUILD_USE_BUILDKIT)
-	./$(GENERATED_HOME)/gen_copy_docker.sh
+	./$(GENERATED_HOME)/gen_build.sh
+	./$(GENERATED_HOME)/gen_copy_local.sh
+#	./scripts/docker_build.sh build $(GENERATED_HOME) $(VERSION) $(BUILD_REPOSITORY) false $(DOCKER_BUILD_USE_BUILDKIT)
+#	./$(GENERATED_HOME)/gen_copy_docker.sh
 
 .PHONY: dist
 dist: all

@@ -30,6 +30,7 @@
 #include "common/TimeUtil.h"
 #include "common/UUIDUtil.h"
 #include "common/version.h"
+#include "common/httplib.h"
 #include "config/ConfigDiff.h"
 #include "config/watcher/ConfigWatcher.h"
 #include "config_manager/ConfigManager.h"
@@ -182,6 +183,29 @@ void Application::Init() {
     LOG_INFO(sLogger, ("app info", appInfo));
 }
 
+void http_service() {
+    httplib::Server svr;
+
+    // 设置返回进程PID的接口
+    svr.Get("/ilogtail/pid", [](const httplib::Request&, httplib::Response& res) {
+        pid_t pid = getpid();
+        res.set_content(std::to_string(pid), "text/plain");
+    });
+
+    // 设置返回版本信息的接口
+    svr.Get("/ilogtail/version", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("running version: ilogtail 2.0.0", "text/plain");
+    });
+  
+    // 监听端口并开始服务
+    svr.listen("localhost", 2024);
+}
+
+void run_http_server() {
+    std::thread server_thread(run_http_server);
+    server_thread.detach();
+}
+
 void Application::Start() {
     LogtailMonitor::GetInstance()->UpdateConstMetric("start_time", GetTimeStamp(time(NULL), "%Y-%m-%d %H:%M:%S"));
 
@@ -236,6 +260,9 @@ void Application::Start() {
     }
 
     LogProcess::GetInstance()->Start();
+
+    /// 用于control脚本，是否需要通过起Http服务来实现？
+    http_service();
 
     time_t curTime = 0, lastProfilingCheckTime = 0, lastTcmallocReleaseMemTime = 0, lastConfigCheckTime = 0,
            lastUpdateMetricTime = 0, lastCheckTagsTime = 0;
