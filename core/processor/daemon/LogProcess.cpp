@@ -73,10 +73,9 @@ LogProcess::LogProcess() : mAccessProcessThreadRWL(ReadWriteLock::PREFER_WRITER)
     if (concurrencyCount < 20) {
         concurrencyCount = 20;
     }
-    if (concurrencyCount > 50) {
-        concurrencyCount = 50;
-    }
-    mLogFeedbackQueue.SetParam(concurrencyCount, (size_t)(concurrencyCount * 1.5), 100);
+
+    size_t max_queue_size = std::max(100, (int)(concurrencyCount * 2));
+    mLogFeedbackQueue.SetParam(concurrencyCount, (size_t)(concurrencyCount * 1.5), max_queue_size);
     mThreadCount = 0;
     mInitialized = false;
 }
@@ -246,9 +245,11 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
             int32_t totalCount = 0;
             int32_t eoInvalidCount = 0;
             int32_t eoTotalCount = 0;
-            mLogFeedbackQueue.GetStatus(invalidCount, totalCount, eoInvalidCount, eoTotalCount);
+            int32_t queueSize = 0;
+            mLogFeedbackQueue.GetStatus(invalidCount, totalCount, eoInvalidCount, eoTotalCount, queueSize);
             sMonitor->UpdateMetric("process_queue_full", invalidCount);
             sMonitor->UpdateMetric("process_queue_total", totalCount);
+            sMonitor->UpdateMetric("process_queue_size", queueSize);
             if (eoTotalCount > 0) {
                 sMonitor->UpdateMetric("eo_process_queue_full", eoInvalidCount);
                 sMonitor->UpdateMetric("eo_process_queue_total", eoTotalCount);
@@ -420,6 +421,7 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
                                                                  readBytes,
                                                                  profile.skipBytes,
                                                                  profile.splitLines,
+                                                                 profile.maxCollectDelay,
                                                                  profile.parseFailures,
                                                                  profile.regexMatchFailures,
                                                                  profile.parseTimeFailures,

@@ -347,6 +347,7 @@ void LogInput::UpdateCriticalMetric(int32_t curTime) {
     LogtailMonitor::GetInstance()->UpdateMetric("register_handler", EventDispatcher::GetInstance()->GetHandlerCount());
     LogtailMonitor::GetInstance()->UpdateMetric("reader_count", CheckPointManager::Instance()->GetReaderCount());
     LogtailMonitor::GetInstance()->UpdateMetric("multi_config", AppConfig::GetInstance()->IsAcceptMultiConfig());
+    LogtailMonitor::GetInstance()->UpdateMetric("inotify_event_queue", mInotifyEventQueue.size());
     mEventProcessCount = 0;
 }
 

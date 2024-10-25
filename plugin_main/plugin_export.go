@@ -19,9 +19,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
-	"runtime/debug"
+	// "runtime/debug"
 	"sync"
-	"time"
+	// "time"
 	"unsafe"
 
 	"github.com/alibaba/ilogtail/pkg/config"
@@ -285,15 +285,15 @@ func initPluginBase(cfgStr string) int {
 // setGCPercentForSlowStart sets GC percent with a small value at startup
 // to avoid high RSS (caused by data catch-up) to trigger OOM-kill.
 func setGCPercentForSlowStart() {
-	gcPercent := 20
-	_ = util.InitFromEnvInt("ALIYUN_LOGTAIL_GOLANG_GC_PERCENT", &gcPercent, gcPercent)
-	defaultGCPercent := debug.SetGCPercent(gcPercent)
-	logger.Infof(context.Background(), "set startup GC percent from %v to %v", defaultGCPercent, gcPercent)
-	resumeSeconds := 5 * 60
-	_ = util.InitFromEnvInt("ALIYUN_LOGTAIL_GOLANG_GC_PERCENT_RESUME_SEC", &resumeSeconds, resumeSeconds)
-	go func(pc int, sec int) {
-		time.Sleep(time.Second * time.Duration(sec))
-		last := debug.SetGCPercent(pc)
-		logger.Infof(context.Background(), "resume GC percent from %v to %v", last, pc)
-	}(defaultGCPercent, resumeSeconds)
+	// gcPercent := 20
+	// _ = util.InitFromEnvInt("ALIYUN_LOGTAIL_GOLANG_GC_PERCENT", &gcPercent, gcPercent)
+	// defaultGCPercent := debug.SetGCPercent(gcPercent)
+	// logger.Infof(context.Background(), "set startup GC percent from %v to %v", defaultGCPercent, gcPercent)
+	// resumeSeconds := 5 * 60
+	// _ = util.InitFromEnvInt("ALIYUN_LOGTAIL_GOLANG_GC_PERCENT_RESUME_SEC", &resumeSeconds, resumeSeconds)
+	// go func(pc int, sec int) {
+	// 	time.Sleep(time.Second * time.Duration(sec))
+	// 	last := debug.SetGCPercent(pc)
+	// 	logger.Infof(context.Background(), "resume GC percent from %v to %v", last, pc)
+	// }(defaultGCPercent, resumeSeconds)
 }

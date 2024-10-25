@@ -52,7 +52,13 @@ std::pair<std::string, std::string> getUsernamePasswd(const std::string & saslJa
     return std::make_pair(username, password);
 }
 
-
+int StringToInt(const std::string& str) {
+    try {
+        return StringTo<int>(str);
+    } catch (...) {
+        return -1;
+    }
+}
 
 void SwanConfigProvider::Init() {
     const Json::Value & confJson = AppConfig::GetInstance()->GetConfig();
@@ -116,6 +122,10 @@ std::vector<SwanConfigProvider::Container> SwanConfigProvider::getContainers() c
             continue;
         }
 
+        if (podService.find("Bigdata") == std::string::npos) {
+            continue;
+        }
+
         containers.emplace_back(podName, podService, podCluster);
     }
 
@@ -150,11 +160,11 @@ std::string SwanConfigProvider::getContainerRealLogPath(const std::string & dock
     std::string errs;
     bool parseResult = Json::parseFromStream(builder, inputStream, &root, &errs);
     if (!parseResult)
-        return NULL;
+        return {};
 
     std::string targetPath = root["data"][dockerName][dockerPath]["target"].asString();
     if (targetPath == "NO_HOST_MAP_DIR")
-        return NULL;
+        return {};
 
     return targetPath;
 }
@@ -169,7 +179,7 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     input1["Type"] = "input_file";
 
     YAML::Node input1FilePaths;
-    input1FilePaths.push_back(swanConfig.logPathDir + swanConfig.filePattern + "*");
+    input1FilePaths.push_back(swanConfig.logPathDir + swanConfig.filePattern);
     input1["FilePaths"] = input1FilePaths;
 
     /// 多行读取
@@ -193,28 +203,11 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     inputsNode.push_back(input1);
     rootNode["inputs"] = inputsNode;
 
-    // processor插件
-    YAML::Node processorsNode;
-    YAML::Node processor1;
-    processor1["Type"] = "processor_add_fields";
-    processor1["Fields"]["hostName"] = swanConfig.hostName;
-    processor1["Fields"]["originalAppName"] = swanConfig.originalAppName;
-    processor1["Fields"]["odinLeaf"] = swanConfig.odinLeaf;
-    processor1["Fields"]["logId"] = swanConfig.logModelId + " ";
-    processor1["Fields"]["appName"] = swanConfig.appName;
-    processor1["Fields"]["queryFrom"] = swanConfig.queryFrom;
-    processor1["Fields"]["isService"] = swanConfig.isService + " ";
-    processor1["Fields"]["DIDIENV_ODIN_SU"] = swanConfig.odinSu;
-    processor1["Fields"]["pathId"] = swanConfig.pathId + " ";
-    processorsNode.push_back(processor1);
-    rootNode["processors"] = processorsNode;
-
     // flusher插件
     YAML::Node flushersNode;
     YAML::Node flusher1;
     flusher1["Type"] = "flusher_kafka_v2";
     flusher1["Version"] = "0.10.2.0";
-    flusher1["pack"] = true;
     flusher1["MaxMessageBytes"] = 536870912;
     YAML::Node flusher1Brokers;
     for (const auto & broker : swanConfig.brokers) {
@@ -222,9 +215,19 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     }
     flusher1["Brokers"] = flusher1Brokers;
     flusher1["Topic"] = swanConfig.topic;
-    flusher1["Compression"] = "lz4";
     flusher1["Authentication"]["SASL"]["Username"] = swanConfig.username;
     flusher1["Authentication"]["SASL"]["Password"] = swanConfig.password;
+    flusher1["pack"] = true;
+    flusher1["hostName"] = swanConfig.hostName;
+    flusher1["originalAppName"] = swanConfig.originalAppName;
+    flusher1["odinLeaf"] = swanConfig.odinLeaf;
+    flusher1["logId"] = StringToInt(swanConfig.logModelId);
+    flusher1["appName"] = swanConfig.appName;
+    flusher1["queryFrom"] = swanConfig.queryFrom;
+    flusher1["isService"] = StringToInt(swanConfig.isService);
+    flusher1["DIDIENV_ODIN_SU"] = swanConfig.odinSu;
+    flusher1["pathId"] = StringToInt(swanConfig.pathId);
+
     flushersNode.push_back(flusher1);
     rootNode["flushers"] = flushersNode;
 
@@ -286,6 +289,9 @@ void SwanConfigProvider::convertContainerConfigs(Configs & result,
         for (const Json::Value & logPath : logPaths) {
             std::string path = logPath["path"].asString();
             std::string realLogPath = getContainerRealLogPath(containerName, path);
+            if (realLogPath.empty()) {
+                continue;
+            }
             int lastSepPos = realLogPath.find_last_of("/") + 1;
 
             // 目录
@@ -333,7 +339,7 @@ SwanConfigProvider::Configs SwanConfigProvider::convertContainerTasks(const std:
         if (taskType != "log2kafka") {
             continue;
         }
-
+        
         const Json::Value & commonConfig = item["commonConfig"];
         const Json::Value & sourceConfig = item["sourceConfig"];
         const Json::Value & eventMetricsConfig = item["eventMetricsConfig"];
@@ -348,171 +354,171 @@ SwanConfigProvider::Configs SwanConfigProvider::convertContainerTasks(const std:
 }
 
 SwanConfigProvider::Configs SwanConfigProvider::getDirectConfigs(const std::string & hostname) const {
-    // 1. 从AM获取采集配置
-    boost::format url_fmt(agent_manager_physical_config_api + "?hostName=%s");
-    url_fmt % hostname;
-    std::string url = url_fmt.str();
+    try
+    {
+        // 1. 从AM获取采集配置
+        boost::format url_fmt(agent_manager_physical_config_api + "?hostName=%s");
+        url_fmt % hostname;
+        std::string url = url_fmt.str();
 
-    RestClient::Response response = RestClient::get(url);
-    if (response.code != 200) {
-        throw std::runtime_error("agent manager response exception: " + response.body);
-    }
-
-    std::istringstream inputStream(response.body);
-    Json::Value root;
-    Json::CharReaderBuilder builder;
-    std::string errs;
-    bool parseResult = Json::parseFromStream(builder, inputStream, &root, &errs);
-    if (!parseResult) {
-        throw std::runtime_error("parse config exception: " + errs);
-    }
-
-    // 2. Swan配置转换为logtail配置
-    Configs logtailConfigs;
-
-    const Json::Value & modelConfigs = root["data"]["modelConfigs"];
-    for (const Json::Value & modelConfig : modelConfigs) {
-        const Json::Value & eventMetricsConfig = modelConfig["eventMetricsConfig"];
-        std::string serviceName = eventMetricsConfig["belongToCluster"].asString();
-        if (serviceName == "Global") {
-            continue;
+        RestClient::Response response = RestClient::get(url);
+        if (response.code != 200) {
+            throw std::runtime_error("agent manager response, code: " + ToString(response.code) + ", exception: " + response.body + ", url: " + url);
         }
 
-        std::string taskType = modelConfig["tag"].asString();
-        if (taskType != "log2kafka") {
-            continue;
+        std::istringstream inputStream(response.body);
+        Json::Value root;
+        Json::CharReaderBuilder builder;
+        std::string errs;
+        bool parseResult = Json::parseFromStream(builder, inputStream, &root, &errs);
+        if (!parseResult) {
+            throw std::runtime_error("parse config exception: " + errs);
         }
 
-        const Json::Value & commonConfig = modelConfig["commonConfig"];
-        const Json::Value & sourceConfig = modelConfig["sourceConfig"];
-        const Json::Value & targetConfig = modelConfig["targetConfig"];
+        // 2. Swan配置转换为logtail配置
+        Configs logtailConfigs;
 
-        SwanConfig swanConfig;
+        const Json::Value & modelConfigs = root["data"]["modelConfigs"];
+        for (const Json::Value & modelConfig : modelConfigs) {
+            const Json::Value & eventMetricsConfig = modelConfig["eventMetricsConfig"];
+            std::string serviceName = eventMetricsConfig["belongToCluster"].asString();
+            if (serviceName == "Global") {
+                continue;
+            }
 
-        // 发送参数
-        auto sendMQProperties = getSendMQProperties(targetConfig["properties"].asString());
-        auto auth = getUsernamePasswd(sendMQProperties["sasl_jaas_config"]);
-        // std::string fileSuffix = sourceConfig["matchConfig"]["fileSuffix"].asString();
+            std::string taskType = modelConfig["tag"].asString();
+            if (taskType != "log2kafka") {
+                continue;
+            }
 
-        swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
-        swanConfig.brokers = SplitString(sendMQProperties["gateway"], ";");
-        swanConfig.originalAppName = eventMetricsConfig["originalAppName"].asString();
-        swanConfig.odinLeaf = eventMetricsConfig["odinLeaf"].asString();
-        swanConfig.logModelId = std::to_string(commonConfig["modelId"].asInt());
-        swanConfig.appName = eventMetricsConfig["originalAppName"].asString();
-        swanConfig.queryFrom = eventMetricsConfig["queryFrom"].asString();
-        swanConfig.isService = std::to_string(eventMetricsConfig["isService"].asInt());
-        swanConfig.odinSu = "";
-        swanConfig.hostName = hostname;
-        swanConfig.username = auth.first;
-        swanConfig.password = auth.second;
+            const Json::Value & commonConfig = modelConfig["commonConfig"];
+            const Json::Value & sourceConfig = modelConfig["sourceConfig"];
+            const Json::Value & targetConfig = modelConfig["targetConfig"];
 
-        swanConfig.timeStartFlagIndex = sourceConfig["timeStartFlagIndex"].asInt();
-        swanConfig.timeStartFlag = sourceConfig["timeStartFlag"].asString();
-        swanConfig.timeFormat = sourceConfig["timeFormat"].asString();
-        swanConfig.timeFormatLength = sourceConfig["timeFormatLength"].asInt();
+            SwanConfig swanConfig;
 
-        const Json::Value & logPaths = sourceConfig["logPaths"];
-        for (const Json::Value & logPath : logPaths) {
-            std::string path = logPath["path"].asString();
-            const std::string realLogPath = logPath["realPath"].asString();
-            int lastSepPos = realLogPath.find_last_of("/") + 1;
+            // 发送参数
+            auto sendMQProperties = getSendMQProperties(targetConfig["properties"].asString());
+            auto auth = getUsernamePasswd(sendMQProperties["sasl_jaas_config"]);
+            // std::string fileSuffix = sourceConfig["matchConfig"]["fileSuffix"].asString();
 
-            // 目录
-            swanConfig.logPathDir = realLogPath.substr(0, lastSepPos);
-            swanConfig.filePattern = realLogPath.substr(lastSepPos, realLogPath.length());
-            swanConfig.pathId = std::to_string(logPath["pathId"].asInt());
+            swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
+            swanConfig.brokers = SplitString(sendMQProperties["gateway"], ";");
+            swanConfig.originalAppName = eventMetricsConfig["originalAppName"].asString();
+            swanConfig.odinLeaf = eventMetricsConfig["odinLeaf"].asString();
+            swanConfig.logModelId = std::to_string(commonConfig["modelId"].asInt());
+            swanConfig.appName = eventMetricsConfig["originalAppName"].asString();
+            swanConfig.queryFrom = eventMetricsConfig["queryFrom"].asString();
+            swanConfig.isService = std::to_string(eventMetricsConfig["isService"].asInt());
+            swanConfig.odinSu = "";
+            swanConfig.hostName = hostname;
+            swanConfig.username = auth.first;
+            swanConfig.password = auth.second;
 
-            std::string yamlConfigName = swanConfig.logModelId + "_" + swanConfig.pathId + ".yaml";
-            logtailConfigs[yamlConfigName] = generateYamlConfig(swanConfig);
+            swanConfig.timeStartFlagIndex = sourceConfig["timeStartFlagIndex"].asInt();
+            swanConfig.timeStartFlag = sourceConfig["timeStartFlag"].asString();
+            swanConfig.timeFormat = sourceConfig["timeFormat"].asString();
+            swanConfig.timeFormatLength = sourceConfig["timeFormatLength"].asInt();
+
+            const Json::Value & logPaths = sourceConfig["logPaths"];
+            for (const Json::Value & logPath : logPaths) {
+                std::string path = logPath["path"].asString();
+                const std::string realLogPath = logPath["realPath"].asString();
+                int lastSepPos = realLogPath.find_last_of("/") + 1;
+
+                // 目录
+                swanConfig.logPathDir = realLogPath.substr(0, lastSepPos);
+                swanConfig.filePattern = realLogPath.substr(lastSepPos, realLogPath.length());
+                swanConfig.pathId = std::to_string(logPath["pathId"].asInt());
+
+                std::string yamlConfigName = swanConfig.logModelId + "_" + swanConfig.pathId + ".yaml";
+                logtailConfigs[yamlConfigName] = generateYamlConfig(swanConfig);
+            }
         }
+        return logtailConfigs;
+    } catch (const std::exception& e) {
+        LOG_ERROR(sLogger, ("get direct configs exception: {}", e.what()));
     }
-
-    return logtailConfigs;
+    return {};
 }
 
 SwanConfigProvider::Configs SwanConfigProvider::getContainerConfigs(const std::string & hostname) const {
-    // 1. 获取容器列表
-    std::vector<Container> containers;
     try {
-        containers = getContainers();
-    } catch (const std::runtime_error & e) {
-        std::cerr << e.what() << std::endl;
-        return {};
-    }
+        // 1. 获取容器列表
+        std::vector<Container> containers = getContainers();
 
-    // 2. 构建服务名&容器之间的映射
-    std::unordered_map<std::string, std::vector<Container>> serviceAndContainersMapping;
-    for (auto & container : containers) {
-        auto & serviceName = container.serviceName;
+        // 2. 构建服务名&容器之间的映射
+        std::unordered_map<std::string, std::vector<Container>> serviceAndContainersMapping;
+        for (auto & container : containers) {
+            auto & serviceName = container.serviceName;
 
-        auto it = serviceAndContainersMapping.find(serviceName);
-        if (it != serviceAndContainersMapping.end()) {
-            std::vector<Container> & entry = it->second;
-            entry.push_back(container);
-        } else {
-            std::vector<Container> serviceContainers;
-            serviceContainers.push_back(container);
-            serviceAndContainersMapping[serviceName] = serviceContainers;
+            auto it = serviceAndContainersMapping.find(serviceName);
+            if (it != serviceAndContainersMapping.end()) {
+                std::vector<Container> & entry = it->second;
+                entry.push_back(container);
+            } else {
+                std::vector<Container> serviceContainers;
+                serviceContainers.push_back(container);
+                serviceAndContainersMapping[serviceName] = serviceContainers;
+            }
         }
-    }
 
-    // 3. 获取所有服务名
-    std::set<std::string> serviceNames;
-    for (const auto & item : serviceAndContainersMapping) {
-        serviceNames.insert(item.first);
-    }
-
-    /// 构建请求参数
-    std::map<std::string, std::string> requestParams;
-    requestParams["hostName"] = hostname;
-
-    std::stringstream ss;
-    for (const auto & str : serviceNames) {
-        if (ss.str().empty()) {
-            ss << str;
-        } else {
-            ss << "," << str;
+        // 3. 获取所有服务名
+        std::set<std::string> serviceNames;
+        for (const auto & item : serviceAndContainersMapping) {
+            serviceNames.insert(item.first);
         }
+
+        /// 构建请求参数
+        std::map<std::string, std::string> requestParams;
+        requestParams["hostName"] = hostname;
+
+        std::stringstream ss;
+        for (const auto & str : serviceNames) {
+            if (ss.str().empty()) {
+                ss << str;
+            } else {
+                ss << "," << str;
+            }
+        }
+        requestParams["serviceNames"] = ss.str();
+
+        // 4. 获取采集配置
+        boost::format url_fmt(agent_manager_container_config_api + "?hostName=%s&serviceNames=%s");
+        url_fmt % requestParams.at("hostName") % requestParams.at("serviceNames");
+        std::string url = url_fmt.str();
+
+        RestClient::Response response = RestClient::get(url);
+        if (response.code != 200) {
+            throw std::runtime_error("agent manager response, code: " + ToString(response.code) + ", exception: " + response.body + ", url: " + url);
+        }
+
+        // 5. 转换配置
+        return convertContainerTasks(response.body, serviceAndContainersMapping);
+    } catch (const std::exception& e) {
+        throw std::runtime_error("get container config exception: " +  ToString(e.what()));
     }
-    requestParams["serviceNames"] = ss.str();
-
-    // 4. 获取采集配置
-    boost::format url_fmt(agent_manager_container_config_api + "?hostName=%s&serviceNames=%s");
-    url_fmt % requestParams.at("hostName") % requestParams.at("serviceNames");
-    std::string url = url_fmt.str();
-
-    RestClient::Response response = RestClient::get(url);
-    if (response.code != 200) {
-        throw std::runtime_error("agent manager response exception: " + response.body);
-    }
-
-    // 5. 转换配置
-    return convertContainerTasks(response.body, serviceAndContainersMapping);
+    return {};
 }
 
 
 SwanConfigProvider::Configs SwanConfigProvider::getConfigs() const {
-    try {
-        // 1. 获取主机名
-        // std::string hostname = GetHostName();
-        std::string hostname = "bigdata-streaming-k8smaster1.ys";
+    /// TODO 异常处理
+    // 1. 获取主机名
+    std::string hostname = GetHostName();
 
-        // 2. 获取直采任务配置
-        Configs directTasks = getDirectConfigs(hostname);
+    // 2. 获取直采任务配置
+    Configs directTasks = getDirectConfigs(hostname);
 
-        if (!isDDCloudHost(hostname)) {
-            return directTasks;
-        }
-
-        // 3. 获取容器任务配置
-        Configs containerTasks = getContainerConfigs(hostname);
-        directTasks.insert(containerTasks.begin(), containerTasks.end());
-
+    if (!isDDCloudHost(hostname)) {
         return directTasks;
-    } catch (const std::runtime_error & e) {
-        throw std::runtime_error(std::string(e.what()));
     }
+
+    // 3. 获取容器任务配置
+    Configs containerTasks = getContainerConfigs(hostname);
+    directTasks.insert(containerTasks.begin(), containerTasks.end());
+    LOG_DEBUG(sLogger, ("swan configs size.", directTasks.size()));
+    return directTasks;
 }
 
 } // namespace logtail

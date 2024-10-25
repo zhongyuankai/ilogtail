@@ -175,7 +175,7 @@ void LogtailMonitor::Monitor() {
                     LOG_ERROR(sLogger,
                               ("Resource used by program exceeds hard limit",
                                "prepare restart Logtail")("cpu_usage", mCpuStat.mCpuUsage)("mem_rss", mMemStat.mRss));
-                    Suicide();
+                    // Suicide();
                 }
             }
 
@@ -200,7 +200,7 @@ void LogtailMonitor::Monitor() {
                     LOG_ERROR(sLogger,
                               ("Resource used by program exceeds upper limit for some time",
                                "prepare restart Logtail")("cpu_usage", mCpuStat.mCpuUsage)("mem_rss", mMemStat.mRss));
-                    Suicide();
+                    // Suicide();
                 }
 
                 if (IsHostIpChanged()) {

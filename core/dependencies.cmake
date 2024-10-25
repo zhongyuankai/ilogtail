@@ -61,6 +61,7 @@ set(DEP_NAME_LIST
         leveldb
         uuid
         restclient-cpp
+        absl
         )
 
 if (NOT NO_TCMALLOC)
@@ -381,6 +382,12 @@ endmacro()
 # restclient-cpp
 macro(link_restclientcpp target_name)
     target_link_libraries(${target_name} "${restclient-cpp_${LIBRARY_DIR_SUFFIX}}/librestclient-cpp.a")
+endmacro()
+
+# absl
+macro(link_absl target_name)
+    target_link_libraries(${target_name} "${absl_${LIBRARY_DIR_SUFFIX}}/libabsl_time.a")
+    target_link_libraries(${target_name} "${absl_${LIBRARY_DIR_SUFFIX}}/libabsl_time_zone.a")
 endmacro()
 
 macro(link_spl target_name)

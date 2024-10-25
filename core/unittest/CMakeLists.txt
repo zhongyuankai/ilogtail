@@ -40,6 +40,7 @@ link_asan(${PROJECT_NAME})
 link_spl(${PROJECT_NAME})
 link_tcmalloc(${PROJECT_NAME})
 link_restclientcpp(${PROJECT_NAME})
+link_absl(${PROJECT_NAME})
 
 if (UNIX)
     link_uuid(${PROJECT_NAME})

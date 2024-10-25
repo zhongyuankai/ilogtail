@@ -4,6 +4,9 @@
 #include <vector>
 #include <iostream>
 #include <boost/lexical_cast.hpp>
+#include "absl/time/time.h"
+#include "absl/time/clock.h"
+
 
 namespace logtail {
 
@@ -48,22 +51,22 @@ StringView getTimeStringFromLineByIndex(const char* buffer, size_t size, const s
 }
 
 time_t parseTime(const StringView & timeString, const std::string & timeFormat) {
-    if (timeFormat == "LongType-Time") {
-        try {
+    try {
+        if (timeFormat == "LongType-Time") {
             long long millis = boost::lexical_cast<long long>(timeString);
             return static_cast<time_t>(millis / 1000);
-        } catch (const boost::bad_lexical_cast & e) {
-            return -1;
         }
-    }
 
-    struct tm tm;
-    memset(&tm, 0, sizeof(tm));
-    if (auto ret = strptime(timeString.data(), timeFormat.c_str(), &tm); ret != NULL) {
-        tm.tm_isdst = -1;
-        return mktime(&tm);
+        absl::string_view s(timeString.data(), timeString.size());
+        absl::Time time;
+        std::string err;
+        static absl::TimeZone local_tz = absl::LocalTimeZone();
+        if (absl::ParseTime(timeFormat, s, local_tz, &time, &err)) {
+            return absl::ToUnixSeconds(time);
+        }
+    } catch (...) {
+        return -1;
     }
-    return -1;
 }
 
 std::string convertJavaFormatToStrptime(const std::string & javaFormat) {

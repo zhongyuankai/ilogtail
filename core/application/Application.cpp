@@ -183,7 +183,7 @@ void Application::Init() {
     LOG_INFO(sLogger, ("app info", appInfo));
 }
 
-void http_service() {
+void run_http_server() {
     httplib::Server svr;
 
     // 设置返回进程PID的接口
@@ -194,14 +194,14 @@ void http_service() {
 
     // 设置返回版本信息的接口
     svr.Get("/ilogtail/version", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content("running version: ilogtail 2.0.0", "text/plain");
+        res.set_content("running version: ilogtail 2.0.7", "text/plain");
     });
   
     // 监听端口并开始服务
     svr.listen("localhost", 2024);
 }
 
-void run_http_server() {
+void http_service() {
     std::thread server_thread(run_http_server);
     server_thread.detach();
 }

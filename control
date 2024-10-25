@@ -23,6 +23,8 @@ DDCLOUD_PATH="/home/odin/container-host"
 LINUX_VERSION="7.2"
 ZJY_OFFLINE_TAG="\"cluster\":\"zjy-offline\""
 
+export GOMEMLIMIT=5368709120
+export GOGC=off
 
 function linux_version() {
     linux_version=`cat /etc/redhat-release`
@@ -240,7 +242,7 @@ function del_lockfile() {
 
 ## usage
 function usage() {
-    echo "$0 start|stop|restart|status|tail|version|running_version|install"
+    echo "$0 start|stop|restart|status|version|running_version|install|pid"
 }
 
 ## main

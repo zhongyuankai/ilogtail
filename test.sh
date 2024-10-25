@@ -2,6 +2,9 @@
 set -xue
 set -o pipefail
 
+export GOPROXY=https://goproxy.cn,direct
+export GO111MODULE=on
+
 # unittest_plugin
 make unittest_plugin
 

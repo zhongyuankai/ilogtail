@@ -44,6 +44,7 @@ struct ProcessProfile {
     int parseTimeFailures = 0;
     int historyFailures = 0;
     int logGroupSize = 0;
+    int maxCollectDelay = 0;
 
     void Reset() { memset(this, 0, sizeof(ProcessProfile)); }
 };

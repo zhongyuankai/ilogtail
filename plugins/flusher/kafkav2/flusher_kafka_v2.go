@@ -118,6 +118,16 @@ type FlusherKafka struct {
 
 	// didi
 	Pack bool
+	/// add fields
+	HostName string
+	OriginalAppName string
+	OdinLeaf string
+	LogId int
+	AppName string
+	QueryFrom string
+	IsService int
+	DIDIENV_ODIN_SU string
+	PathId int
 }
 
 type backoffConfig struct {
@@ -210,6 +220,15 @@ func NewFlusherKafka() *FlusherKafka {
 			Encoding: converter.EncodingJSON,
 		},
 		Pack: false,
+		HostName: "",
+		OriginalAppName: "",
+		OdinLeaf: "",
+		LogId: -1,
+		AppName: "",
+		QueryFrom: "",
+		IsService: -1,
+		DIDIENV_ODIN_SU: "",
+		PathId: -1,
 	}
 }
 func (k *FlusherKafka) Init(context pipeline.Context) error {
@@ -417,30 +436,21 @@ func (k *FlusherKafka) ConvertFormat(logGroup *protocol.LogGroup) []Event {
 			LogName: logName,
 			FileKey: inode,
 			CollectTime: currTime,
+			HostName: k.HostName,
+			OriginalAppName: k.OriginalAppName,
+			OdinLeaf: k.OdinLeaf,
+			LogId: k.LogId,
+			AppName: k.AppName,
+			QueryFrom: k.QueryFrom,
+			IsService: k.IsService,
+			DIDIENV_ODIN_SU: k.DIDIENV_ODIN_SU,
+			PathId: k.PathId,
 		}
 
 		for _, content := range log.Contents {
 			switch content.Key {
 				case "content":
 					event.Content = content.Value
-				case "hostName":
-					event.HostName = content.Value
-				case "odinLeaf":
-					event.OdinLeaf = content.Value
-				case "queryFrom":
-					event.QueryFrom = content.Value
-				case "DIDIENV_ODIN_SU":
-					event.DIDIENV_ODIN_SU = content.Value
-				case "appName":
-					event.AppName = content.Value
-				case "originalAppName":
-					event.OriginalAppName = content.Value
-				case "isService":
-					event.IsService = k.processIntValue(content.Value)
-				case "logId":
-					event.LogId = k.processIntValue(content.Value)
-				case "pathId":
-					event.PathId = k.processIntValue(content.Value)
 				case "__file_offset__":
 					offset, err := strconv.ParseInt(content.Value, 10, 64)
 					if err == nil {

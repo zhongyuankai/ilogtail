@@ -49,6 +49,7 @@ public:
                           uint64_t readBytes,
                           uint64_t skipBytes,
                           uint64_t splitLines,
+                          uint64_t maxCollectDelay,
                           uint64_t parseFailures,
                           uint64_t regexMatchFailures,
                           uint64_t parseTimeFailures,
@@ -104,6 +105,7 @@ private:
                           uint64_t readBytes = 0,
                           uint64_t skipBytes = 0,
                           uint64_t splitLines = 0,
+                          uint64_t maxCollectDelay = 0,
                           uint64_t parseFailures = 0,
                           uint64_t regexMatchFailures = 0,
                           uint64_t parseTimeFailures = 0,
@@ -119,6 +121,7 @@ private:
               mReadBytes(readBytes),
               mSkipBytes(skipBytes),
               mSplitLines(splitLines),
+              mMaxCollectDelay(maxCollectDelay),
               mParseFailures(parseFailures),
               mRegexMatchFailures(regexMatchFailures),
               mParseTimeFailures(parseTimeFailures),
@@ -146,6 +149,7 @@ private:
             mReadBytes = 0;
             mSkipBytes = 0;
             mSplitLines = 0;
+            mMaxCollectDelay = 0;
             mParseFailures = 0;
             mRegexMatchFailures = 0;
             mParseTimeFailures = 0;
@@ -180,6 +184,8 @@ private:
         // how many lines send failed: mSendFailures
         // how many lines succeed send: mSplitLines - mParseFailures - mSendFailures
         uint64_t mSplitLines;
+        /// 最大的采集延迟
+        uint64_t mMaxCollectDelay;
         // how many lines parse fails (include all failures)
         uint64_t mParseFailures;
         // how many lines regex match fail(include boost crash or not match)

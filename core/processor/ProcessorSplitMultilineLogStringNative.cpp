@@ -18,6 +18,7 @@
 
 #include <boost/regex.hpp>
 #include <string>
+#include <algorithm>
 
 #include "app_config/AppConfig.h"
 #include "common/Constants.h"
@@ -70,6 +71,7 @@ bool ProcessorSplitMultilineLogStringNative::Init(const Json::Value& config) {
     mProcUnmatchedLinesCnt = GetMetricsRecordRef().CreateCounter(METRIC_PROC_SPLIT_MULTILINE_LOG_UNMATCHED_LINES_TOTAL);
 
     mSplitLines = &(mContext->GetProcessProfile().splitLines);
+    mMaxCollectDelay = &(mContext->GetProcessProfile().maxCollectDelay);
 
     return true;
 }
@@ -309,12 +311,13 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
 
         /// 基于时间的多行解析，会更新LogEvent的时间戳为日志打印的时间
         time_t logTime = time(nullptr);
+        time_t currentTime = time(nullptr);
+        time_t maxCollectDelay = 0;
 
         while (begin < sourceVal.size()) {
             StringView content = GetNextLine(sourceVal, begin);
             ++(*inputLines);
 
-            LOG_DEBUG(mContext->GetLogger(), ("zyk test, multiline mode", "TimeRule")("multiline content", content.to_string()));
             StringView timeString = getTimeStringFromLineByIndex(content.data(), content.size(), startFlag, startFlagIndex, timeStringLength);
             if (!isPartialLog) {
                 if (!timeString.empty()) {
@@ -332,6 +335,8 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
                 if (!isPartialLog) {
                     HandleUnmatchLogs(
                         content, sourceOffset, sourceKey, sourceEvent, logGroup, newEvents, logPath, unmatchLines, logTime);
+                    
+                    maxCollectDelay = std::max(maxCollectDelay, currentTime - logTime);
                 }
             } else {
                 if (!timeString.empty()) {
@@ -346,6 +351,8 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
                                         logTime);
                         multiStartIndex = content.data();
                         mProcMatchedEventsCnt->Add(1);
+
+                        maxCollectDelay = std::max(maxCollectDelay, currentTime - logTime);
 
                         /// 更新当前行的logTime为日志打印的时间
                         logTime = timestamp;
@@ -364,7 +371,11 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
                            newEvents,
                            logTime);
             mProcMatchedEventsCnt->Add(1);
+
+            maxCollectDelay = std::max(maxCollectDelay, currentTime - logTime);
         }
+
+        *mMaxCollectDelay = maxCollectDelay;
         return;
     }
 
@@ -403,7 +414,6 @@ void ProcessorSplitMultilineLogStringNative::CreateNewEvent(const StringView& co
     std::unique_ptr<LogEvent> targetEvent = logGroup.CreateLogEvent();
     if (logTime != -1) {
         targetEvent->SetTimestamp(logTime, 0);
-
     } else {
         targetEvent->SetTimestamp(
             sourceEvent.GetTimestamp(),

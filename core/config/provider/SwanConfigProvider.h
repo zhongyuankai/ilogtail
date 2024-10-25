@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/StringTools.h"
+
 #include <unordered_map>
 #include <set>
 #include <vector>
@@ -93,7 +95,7 @@ private:
     std::string getContainerRealLogPath(const std::string & dockerName, const std::string & dockerPath) const;
 
     bool isDDCloudHost(const std::string & hostname) const {
-        return hostname.substr(0, DDCLOUD_HOST_PREFIX.size()) == DDCLOUD_HOST_PREFIX;
+        return StartWith(hostname, DDCLOUD_HOST_PREFIX);
     }
 
     bool isNeededContainer(const std::string & filterRule, const std::set<std::string> & clusterNames, const Container & container) const;
@@ -104,7 +106,7 @@ private:
     std::string agent_manager_container_config_api;
 
     /// didi-cloud
-    const std::string DDCLOUD_HOST_PREFIX = "ddcloud-";
+    const std::string DDCLOUD_HOST_PREFIX = "dcloud-";
     /// 获取容器API
     std::string ddcloud_pods_api;
     /// 容器路径与物理机路径映射

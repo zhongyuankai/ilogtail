@@ -340,12 +340,12 @@ void CommonConfigProvider::UpdateRemoteConfig(
 }
 
 void CommonConfigProvider::GetSwanConfigUpdate() {
-    LOG_DEBUG(sLogger, ("begin to get swan config ...", ""));
+    LOG_INFO(sLogger, ("begin to get swan config ...", ""));
 
     std::unordered_map<std::string, std::string> configs;
     try {
         configs = SwanConfigProvider::GetInstance()->getConfigs();
-    } catch (const runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG_ERROR(sLogger, ("get config from agent manager error ...", std::string(e.what())));
         return;
     }
@@ -360,6 +360,7 @@ void CommonConfigProvider::GetSwanConfigUpdate() {
     for (const auto & [configName, configContent] : configs) {
         if (auto it = oldConfigs.find(configName); it == oldConfigs.end()) {
             addedConfigs[configName] = configContent;
+            LOG_INFO(sLogger, ("add swan config file", configName));
         }
     }
 
@@ -367,6 +368,7 @@ void CommonConfigProvider::GetSwanConfigUpdate() {
     for (const auto & [configName, configContent] : oldConfigs) {
         if (auto it = configs.find(configName); it == configs.end()) {
             deleteConfigs[configName] = configContent;
+            LOG_INFO(sLogger, ("delete swan config file", configName));
         }
     }
 
@@ -377,13 +379,14 @@ void CommonConfigProvider::GetSwanConfigUpdate() {
 
             if (newConfigContent != configContent) {
                 updateConfigs[configName] = newConfigContent;
+                LOG_INFO(sLogger, ("update swan config file", configName));
             }
         }
     }
 
     // 处理新增、更新、删除的配置
     processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
-    LOG_DEBUG(sLogger, ("end to convert swan config......", ""));
+    LOG_INFO(sLogger, ("end to convert swan config......", ""));
 }
 
 std::unordered_map<std::string, std::string> CommonConfigProvider::getLocalConfigs() {

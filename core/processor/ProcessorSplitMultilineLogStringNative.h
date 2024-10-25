@@ -69,6 +69,7 @@ private:
     StringView GetNextLine(StringView log, size_t begin);
 
     int* mSplitLines = nullptr;
+    int* mMaxCollectDelay = nullptr;
 
     CounterPtr mProcMatchedEventsCnt;
     CounterPtr mProcMatchedLinesCnt;

@@ -155,3 +155,18 @@ sudo make clean
 ./configure --prefix=$DESTINATION --disable-shared --enable-static
 make -j24
 sudo make install
+cd ..
+
+# abls
+remove_old_lib libabls
+wget https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz
+tar -zxf 20240722.0.abls
+cd abseil-cpp-20240722.0
+mkdir build
+cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=/opt/logtail/deps/ -DCMAKE_CXX_STANDARD=17
+make -j24
+sudo make install
+sudo ln -s $LIB64_DIR/libabsl_time.a $LIB_DIR/libabsl_time.a
+sudo ln -s $LIB64_DIR/libabsl_time_zone.a $LIB_DIR/libabsl_time_zone.a
+cd ..
