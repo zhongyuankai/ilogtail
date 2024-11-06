@@ -26,7 +26,8 @@ PipelineEventGroup::PipelineEventGroup(PipelineEventGroup&& rhs) noexcept
     : mMetadata(std::move(rhs.mMetadata)),
       mTags(std::move(rhs.mTags)),
       mEvents(std::move(rhs.mEvents)),
-      mSourceBuffer(std::move(rhs.mSourceBuffer)) {
+      mSourceBuffer(std::move(rhs.mSourceBuffer)),
+      mLogSize(std::move(rhs.mLogSize)) {
     for (auto& item : mEvents) {
         item->ResetPipelineEventGroup(this);
     }
@@ -38,6 +39,7 @@ PipelineEventGroup& PipelineEventGroup::operator=(PipelineEventGroup&& rhs) noex
         mTags = std::move(rhs.mTags);
         mEvents = std::move(rhs.mEvents);
         mSourceBuffer = std::move(rhs.mSourceBuffer);
+        mLogSize = std::move(rhs.mLogSize);
         for (auto& item : mEvents) {
             item->ResetPipelineEventGroup(this);
         }
@@ -144,7 +146,7 @@ void PipelineEventGroup::DelTag(const StringView& key) {
 
 uint64_t PipelineEventGroup::EventGroupSizeBytes() {
     // TODO
-    return 0;
+    return mLogSize;
 }
 
 #ifdef APSARA_UNIT_TEST_MAIN

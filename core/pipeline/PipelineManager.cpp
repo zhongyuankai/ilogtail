@@ -23,7 +23,6 @@
 #include "observer/ObserverManager.h"
 #endif
 #include "processor/daemon/LogProcess.h"
-#include "sender/Sender.h"
 #if defined(__ENTERPRISE__) && defined(__linux__) && !defined(__ANDROID__)
 #include "app_config/AppConfig.h"
 #include "shennong/ShennongManager.h"
@@ -146,7 +145,7 @@ void logtail::PipelineManager::UpdatePipelines(ConfigDiff& diff) {
             ObserverManager::GetInstance()->Resume();
         } else {
             // input_observer_network always relies on PluginBase
-            LogtailPlugin::GetInstance()->LoadPluginBase();
+            // LogtailPlugin::GetInstance()->LoadPluginBase();
             ObserverManager::GetInstance()->Reload();
             isInputObserverStarted = true;
         }
@@ -209,7 +208,6 @@ void PipelineManager::StopAllPipelines() {
 #endif
     FileServer::GetInstance()->Stop();
 
-    Sender::Instance()->SetQueueUrgent();
     bool logProcessFlushFlag = false;
     for (int i = 0; !logProcessFlushFlag && i < 500; ++i) {
         logProcessFlushFlag = LogProcess::GetInstance()->FlushOut(10);
@@ -221,7 +219,7 @@ void PipelineManager::StopAllPipelines() {
     }
     LogProcess::GetInstance()->HoldOn();
 
-    LogtailPlugin::GetInstance()->HoldOn(true);
+    // LogtailPlugin::GetInstance()->HoldOn(true);
 
     // Sender should be stopped after profiling threads are stopped.
     LOG_INFO(sLogger, ("stop all pipelines", "succeeded"));

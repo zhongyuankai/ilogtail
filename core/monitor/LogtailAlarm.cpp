@@ -290,25 +290,25 @@ void LogtailAlarm::SendAlarm(const LogtailAlarmType alarmType,
                              const std::string& projectName,
                              const std::string& category,
                              const std::string& region) {
-    if (alarmType < 0 || alarmType >= ALL_LOGTAIL_ALARM_NUM) {
-        return;
-    }
+    // if (alarmType < 0 || alarmType >= ALL_LOGTAIL_ALARM_NUM) {
+    //     return;
+    // }
 
-    // ignore alarm for profile data
-    if (Sender::IsProfileData(region, projectName, category)) {
-        return;
-    }
-    // LOG_DEBUG(sLogger, ("Add Alarm", region)("projectName", projectName)("alarm index",
-    // mMessageType[alarmType])("msg", message));
-    std::lock_guard<std::mutex> lock(mAlarmBufferMutex);
-    string key = projectName + "_" + category;
-    LogtailAlarmVector& alarmBufferVec = *MakesureLogtailAlarmMapVecUnlocked(region);
-    if (alarmBufferVec[alarmType].find(key) == alarmBufferVec[alarmType].end()) {
-        LogtailAlarmMessage* messagePtr
-            = new LogtailAlarmMessage(mMessageType[alarmType], projectName, category, message, 1);
-        alarmBufferVec[alarmType].insert(pair<string, LogtailAlarmMessage*>(key, messagePtr));
-    } else
-        alarmBufferVec[alarmType][key]->IncCount();
+    // // ignore alarm for profile data
+    // if (Sender::IsProfileData(region, projectName, category)) {
+    //     return;
+    // }
+    // // LOG_DEBUG(sLogger, ("Add Alarm", region)("projectName", projectName)("alarm index",
+    // // mMessageType[alarmType])("msg", message));
+    // std::lock_guard<std::mutex> lock(mAlarmBufferMutex);
+    // string key = projectName + "_" + category;
+    // LogtailAlarmVector& alarmBufferVec = *MakesureLogtailAlarmMapVecUnlocked(region);
+    // if (alarmBufferVec[alarmType].find(key) == alarmBufferVec[alarmType].end()) {
+    //     LogtailAlarmMessage* messagePtr
+    //         = new LogtailAlarmMessage(mMessageType[alarmType], projectName, category, message, 1);
+    //     alarmBufferVec[alarmType].insert(pair<string, LogtailAlarmMessage*>(key, messagePtr));
+    // } else
+    //     alarmBufferVec[alarmType][key]->IncCount();
 }
 
 void LogtailAlarm::ForceToSend() {

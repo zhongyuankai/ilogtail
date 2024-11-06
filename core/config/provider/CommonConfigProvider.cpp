@@ -103,11 +103,10 @@ void CommonConfigProvider::CheckUpdateThread() {
     int32_t lastCheckTime = 0;
     unique_lock<mutex> lock(mThreadRunningMux);
     while (mIsThreadRunning) {
-        int32_t curTime = time(NULL);
-        if (curTime - lastCheckTime >= INT32_FLAG(config_update_interval)) {
+        if (time(NULL) - lastCheckTime >= INT32_FLAG(config_update_interval)) {
             GetConfigUpdate();
             GetSwanConfigUpdate();
-            lastCheckTime = curTime;
+            lastCheckTime = time(NULL);
         }
         if (mStopCV.wait_for(lock, std::chrono::seconds(3), [this]() { return !mIsThreadRunning; })) {
             break;
@@ -342,51 +341,50 @@ void CommonConfigProvider::UpdateRemoteConfig(
 void CommonConfigProvider::GetSwanConfigUpdate() {
     LOG_INFO(sLogger, ("begin to get swan config ...", ""));
 
-    std::unordered_map<std::string, std::string> configs;
+    
     try {
-        configs = SwanConfigProvider::GetInstance()->getConfigs();
-    } catch (const std::exception& e) {
-        LOG_ERROR(sLogger, ("get config from agent manager error ...", std::string(e.what())));
-        return;
-    }
+        std::unordered_map<std::string, std::string> & configs = SwanConfigProvider::GetInstance()->getConfigs();
+        std::unordered_map<std::string, std::string> oldConfigs = getLocalConfigs();
 
-    std::unordered_map<std::string, std::string> oldConfigs = getLocalConfigs();
+        StringViewHashMap addedConfigs;
+        StringViewHashMap deleteConfigs;
+        StringViewHashMap updateConfigs;
 
-    std::unordered_map<std::string, std::string> addedConfigs;
-    std::unordered_map<std::string, std::string> deleteConfigs;
-    std::unordered_map<std::string, std::string> updateConfigs;
-
-    // 获取新增的配置
-    for (const auto & [configName, configContent] : configs) {
-        if (auto it = oldConfigs.find(configName); it == oldConfigs.end()) {
-            addedConfigs[configName] = configContent;
-            LOG_INFO(sLogger, ("add swan config file", configName));
-        }
-    }
-
-    // 获取删除的配置
-    for (const auto & [configName, configContent] : oldConfigs) {
-        if (auto it = configs.find(configName); it == configs.end()) {
-            deleteConfigs[configName] = configContent;
-            LOG_INFO(sLogger, ("delete swan config file", configName));
-        }
-    }
-
-    // 获取更新的配置
-    for (const auto & [configName, configContent]: oldConfigs) {
-        if (auto it = configs.find(configName); it != configs.end()) {
-            std::string & newConfigContent = it->second;
-
-            if (newConfigContent != configContent) {
-                updateConfigs[configName] = newConfigContent;
-                LOG_INFO(sLogger, ("update swan config file", configName));
+        // 获取新增的配置
+        for (const auto & [configName, configContent] : configs) {
+            if (auto it = oldConfigs.find(configName); it == oldConfigs.end()) {
+                addedConfigs[configName] = configContent;
+                LOG_INFO(sLogger, ("add swan config file", configName));
             }
         }
-    }
 
-    // 处理新增、更新、删除的配置
-    processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
-    LOG_INFO(sLogger, ("end to convert swan config......", ""));
+        // 获取删除的配置
+        for (const auto & [configName, configContent] : oldConfigs) {
+            if (auto it = configs.find(configName); it == configs.end()) {
+                deleteConfigs[configName] = configContent;
+                LOG_INFO(sLogger, ("delete swan config file", configName));
+            }
+        }
+
+        // 获取更新的配置
+        for (const auto & [configName, configContent]: oldConfigs) {
+            if (auto it = configs.find(configName); it != configs.end()) {
+                std::string & newConfigContent = it->second;
+
+                if (newConfigContent != configContent) {
+                    updateConfigs[configName] = newConfigContent;
+                    LOG_INFO(sLogger, ("update swan config file", configName));
+                }
+            }
+        }
+
+        // 处理新增、更新、删除的配置
+        processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
+        LOG_INFO(sLogger, ("end to convert swan config......", ""));
+        } catch (const std::exception& e) {
+            LOG_ERROR(sLogger, ("update swan config failed...", std::string(e.what())));
+        return;
+    }
 }
 
 std::unordered_map<std::string, std::string> CommonConfigProvider::getLocalConfigs() {
@@ -396,7 +394,7 @@ std::unordered_map<std::string, std::string> CommonConfigProvider::getLocalConfi
     GetAllFiles(mSourceDir, "*.yaml", fileNames);
 
     std::unordered_map<std::string, std::string> configs;
-    for (const auto &fileName: fileNames) {
+    for (const auto & fileName: fileNames) {
         std::string fileContent;
         ReadFileContent(mSourceDir / fileName, fileContent, 1024 * 1024 * 1024);
         configs[fileName] = std::move(fileContent);
@@ -405,10 +403,11 @@ std::unordered_map<std::string, std::string> CommonConfigProvider::getLocalConfi
     return configs;
 }
 
-void CommonConfigProvider::processConfigChange(std::unordered_map<std::string, std::string> & addedConfigs,
-                                               std::unordered_map<std::string, std::string> & updateConfigs,
-                                               std::unordered_map<std::string, std::string> & deleteConfigs) {
-    auto writeFile = [&](const std::string & fileName, const std::string & content) {
+void CommonConfigProvider::processConfigChange(StringViewHashMap & addedConfigs,
+                                               StringViewHashMap & updateConfigs,
+                                               StringViewHashMap & deleteConfigs) {
+    auto writeFile = [&](StringView name, StringView content) {
+        std::string fileName = name.to_string();
         std::filesystem::path filePath = mSourceDir / fileName;
         std::filesystem::path tmpFilePath = mSourceDir / (fileName + ".new");
 
@@ -417,7 +416,7 @@ void CommonConfigProvider::processConfigChange(std::unordered_map<std::string, s
             LOG_WARNING(sLogger, ("failed to open config file", filePath.string()));
             return;
         }
-        fout << content;
+        fout.write(content.data(), content.size());
         fout.close();
 
         error_code ec;
@@ -441,7 +440,7 @@ void CommonConfigProvider::processConfigChange(std::unordered_map<std::string, s
 
     for (const auto & [fileName, content]: deleteConfigs) {
         error_code ec;
-        std::filesystem::remove(mSourceDir / fileName, ec);
+        std::filesystem::remove(mSourceDir / fileName.to_string(), ec);
     }
 }
 

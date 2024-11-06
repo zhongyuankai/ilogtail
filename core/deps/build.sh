@@ -170,3 +170,19 @@ sudo make install
 sudo ln -s $LIB64_DIR/libabsl_time.a $LIB_DIR/libabsl_time.a
 sudo ln -s $LIB64_DIR/libabsl_time_zone.a $LIB_DIR/libabsl_time_zone.a
 cd ..
+
+# librdkafka
+remove_old_lib librdkafka
+wget https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.6.0.tar.gz
+tar -zxf v2.6.0.tar.gz
+cd librdkafka-2.6.0
+./configure --install-deps --source-deps-only --prefix=/opt/logtail/deps --enable-static --disable-shared --enable-sasl --enable-lz4 --disable-zlib --disable-zstd --disable-ssl --disable-gssapi  --disable-regex-ext --disable-curl
+make
+sudo make install
+
+
+# sonic-cpp
+wget https://github.com/bytedance/sonic-cpp/archive/refs/tags/v1.0.1.tar.gz
+tar -zxf v1.0.1.tar.gz
+cp sonic-cpp-1.0.1/include/* /opt/logtail/deps/include/
+

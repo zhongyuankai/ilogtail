@@ -2,6 +2,7 @@
 workspace=$(cd $(dirname $0) && pwd)
 cd $workspace
 
+status=${workspace}/status
 logdir=${workspace}/log
 mkdir -p ${logdir} &>/dev/null
 
@@ -31,6 +32,32 @@ function linux_version() {
     result=$(echo $linux_version | grep "6.7")
     if [ "X$result" != "X" ]; then
         LINUX_VERSION="6.7"
+    fi
+}
+
+function getLogtailPid() {
+    if [[ -f "$status" ]]; then
+        local pid=$(grep "^pid:" $status | awk '{print $2}')
+        if [[ -n "$pid" ]]; then
+            echo "$pid"
+        else
+            echo "未找到 PID 值"
+        fi
+    else
+        echo "$status 文件不存在"
+    fi
+}
+
+function getLogtailVersion() {
+    if [[ -f "$status" ]]; then
+        local version=$(grep "^version:" $status | awk '{print $2}')
+        if [[ -n "$version" ]]; then
+            echo "$version"
+        else
+            echo "未找到版本信息"
+        fi
+    else
+        echo "$status 文件不存在"
     fi
 }
 
@@ -85,6 +112,10 @@ function start() {
        exit 1;
     }
 
+    if [[ -f "$status" ]]; then
+        rm "$status"
+    fi
+
     if [ "X$USER" == "Xlogger" ];then
         if [ "x_$testResult" == "x_test cgexe ok" ]; then
             nohup ${AGENT_CGEXE} -d ilogtail-agent "${workspace}/ilogtail" > $STD_LOG 2> $ERR_LOG &
@@ -107,12 +138,12 @@ function start() {
     local timeout=10
     for(( i =0; i< $timeout; i++ ));do
         sleep 1
-        local pid=`curl --connect-timeout 1 --max-time 3 -s $PID_URL`
-        if [ "_x$pid" != "_x" ];then
+        local pid=$(getLogtailPid)
+        if [[ "$pid" =~ ^[0-9]+$ ]]; then
             break;
         fi
         if [ $i -eq $((timeout-1)) ];then
-            echo "$app start faild!"
+            echo "$app start failed!"
             exit
         fi
     done
@@ -127,31 +158,25 @@ function start() {
 }
 
 function stop() {
-    local timeout=60
+    local timeout=90
     pid=$(get_pid)
     if [ "$pid" == "" ];then
         echo "$app is stopped!"
         echo "----------------------$app is stopped!------------------" >> $logfile
         return 0;
     fi
+    echo "kill ${pid}"
+    echo "----------------------kill ${pid}------------------" >> $logfile
+    kill ${pid} &>> $logfile
     for (( i=0; i < $timeout; i++ ));do
-
-        if [ $i -eq $((timeout - 5)) ];then
-            echo "kill -9 ${pid}"
-            echo "----------------------kill -9 ${pid}------------------" >> $logfile
-            kill -9 ${pid} &>> $logfile
-        else
-            echo "kill ${pid}"
-            echo "----------------------kill ${pid}------------------" >> $logfile
-            kill ${pid} &>> $logfile
-        fi
-
         check_pid
         if [ $? -eq 0 ];then
             return 0
         fi
+        echo -n "..."
         sleep 1
      done
+    echo "stop success."
 }
 
 function restart() {
@@ -161,9 +186,9 @@ function restart() {
 }
 
 function status() {
-    HTTP_CODE=$(curl -s -o /dev/null -s -w "%{http_code}\n" $STATUS_URL)
-    if [ "x_200" == "x_${HTTP_CODE}" ];then
-        echo -n "running, http code: ${HTTP_CODE}"
+    local version=$(getLogtailVersion)
+    if [ "x_2.0.7" == "x_${version}" ];then
+        echo -n "running, version: ${version}"
     else
         echo "stopped"
     fi
@@ -177,18 +202,12 @@ function version() {
 }
 
 function running_version() {
-    echo "----------------------$(date)-${STATUS_URL}------------------" >> $logfile
-    local timeout=10
-    for ((i=0;i<$timeout;i++));do
-        sleep 1
-        response=$(curl --connect-timeout 1 --max-time 3 -s $STATUS_URL)
-        test -n "$response" && break || ( test $i == 9 && echo "curl $STATUS_URL request faild , timeout $i second!" )
-    done
-    echo $response
+    local version=$(getLogtailVersion)
+    echo "version: $version"
 }
 
 function get_pid() {
-    local pid=$(curl --connect-timeout 1 --max-time 3 -s $PID_URL)
+    local pid=$(getLogtailPid)
     expr $pid + 0 &>/dev/null
     if [ $? != 0 ];then
         echo "---------------------- get pid by http service failed, because pid is not a integer ------------------" >> $logfile

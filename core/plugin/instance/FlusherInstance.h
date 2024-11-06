@@ -31,7 +31,7 @@ public:
     FlusherInstance(Flusher* plugin, const std::string& pluginId) : PluginInstance(pluginId), mPlugin(plugin) {}
 
     const std::string& Name() const override { return mPlugin->Name(); };
-    const Flusher* GetPlugin() const { return mPlugin.get(); }
+    Flusher* GetPlugin() const { return mPlugin.get(); }
 
     bool Init(const Json::Value& config, PipelineContext& context, Json::Value& optionalGoPipeline);
     bool Start() { return mPlugin->Start(); }

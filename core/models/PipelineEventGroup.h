@@ -99,6 +99,7 @@ public:
     void SetTag(const std::string& key, const std::string& val);
     void SetTag(const StringBuffer& key, const StringView& val);
     void SetTagNoCopy(const StringBuffer& key, const StringBuffer& val);
+    void SetLogSize(size_t logSize) { mLogSize = logSize; }
     const StringView& GetTag(const StringView& key) const;
     const GroupTags& GetTags() const { return mTags; };
     bool HasTag(const StringView& key) const;
@@ -122,6 +123,7 @@ private:
     GroupTags mTags; // custom tags to output
     EventsContainer mEvents;
     std::shared_ptr<SourceBuffer> mSourceBuffer;
+    size_t mLogSize;
 };
 
 } // namespace logtail

@@ -86,9 +86,15 @@ void SwanConfigProvider::Init() {
     } else {
         ddcloud_pods_dir_map_api = "http://127.0.0.1:8031/v1/data/pod/dirmap";
     }
+
+    if (confJson.isMember("ddcloud_host_prefix")) {
+        ddcloud_host_prefix = confJson["ddcloud_host_prefix"].asString();
+    } else {
+        ddcloud_host_prefix = "ddcloud-";
+    }
 }
 
-std::vector<SwanConfigProvider::Container> SwanConfigProvider::getContainers() const {
+std::vector<SwanConfigProvider::Container> SwanConfigProvider::getContainers() {
     RestClient::Response response = RestClient::get(ddcloud_pods_api);
     if (response.code != 200) {
         throw std::runtime_error("get pods from ddcloud api exception");
@@ -132,7 +138,7 @@ std::vector<SwanConfigProvider::Container> SwanConfigProvider::getContainers() c
     return containers;
 }
 
-bool SwanConfigProvider::isNeededContainer(const std::string & filterRule, const std::set<std::string> & clusterNames, const Container & container) const {
+bool SwanConfigProvider::isNeededContainer(const std::string & filterRule, const std::set<std::string> & clusterNames, const Container & container) {
     if (filterRule == "NONE" || clusterNames.size() == 0)
         return true;
 
@@ -144,7 +150,7 @@ bool SwanConfigProvider::isNeededContainer(const std::string & filterRule, const
     return filterRule == "BLACKLIST" && clusterNames.count(clusterName) <= 0;
 }
 
-std::string SwanConfigProvider::getContainerRealLogPath(const std::string & dockerName, const std::string & dockerPath) const {
+std::string SwanConfigProvider::getContainerRealLogPath(const std::string & dockerName, const std::string & dockerPath) {
     boost::format params_fmt("[{\"hostname\":\"%s\",\"dirs\": [\"%s\"]}]");
     params_fmt % dockerName % dockerPath;
     std::string params = params_fmt.str();
@@ -169,7 +175,7 @@ std::string SwanConfigProvider::getContainerRealLogPath(const std::string & dock
     return targetPath;
 }
 
-std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig) const {
+std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig) {
     YAML::Node rootNode;
     rootNode["enable"] = true;
 
@@ -206,27 +212,20 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     // flusher插件
     YAML::Node flushersNode;
     YAML::Node flusher1;
-    flusher1["Type"] = "flusher_kafka_v2";
-    flusher1["Version"] = "0.10.2.0";
-    flusher1["MaxMessageBytes"] = 536870912;
-    YAML::Node flusher1Brokers;
-    for (const auto & broker : swanConfig.brokers) {
-        flusher1Brokers.push_back(broker);
-    }
-    flusher1["Brokers"] = flusher1Brokers;
+    flusher1["Type"] = "flusher_kafka_v3";
+    flusher1["Brokers"] = swanConfig.brokers;
     flusher1["Topic"] = swanConfig.topic;
-    flusher1["Authentication"]["SASL"]["Username"] = swanConfig.username;
-    flusher1["Authentication"]["SASL"]["Password"] = swanConfig.password;
-    flusher1["pack"] = true;
-    flusher1["hostName"] = swanConfig.hostName;
-    flusher1["originalAppName"] = swanConfig.originalAppName;
-    flusher1["odinLeaf"] = swanConfig.odinLeaf;
-    flusher1["logId"] = StringToInt(swanConfig.logModelId);
-    flusher1["appName"] = swanConfig.appName;
-    flusher1["queryFrom"] = swanConfig.queryFrom;
-    flusher1["isService"] = StringToInt(swanConfig.isService);
+    flusher1["Username"] = swanConfig.username;
+    flusher1["Password"] = swanConfig.password;
+    flusher1["HostName"] = swanConfig.hostName;
+    flusher1["OriginalAppName"] = swanConfig.originalAppName;
+    flusher1["OdinLeaf"] = swanConfig.odinLeaf;
+    flusher1["LogId"] = StringToInt(swanConfig.logModelId);
+    flusher1["AppName"] = swanConfig.appName;
+    flusher1["QueryFrom"] = swanConfig.queryFrom;
+    flusher1["IsService"] = StringToInt(swanConfig.isService);
     flusher1["DIDIENV_ODIN_SU"] = swanConfig.odinSu;
-    flusher1["pathId"] = StringToInt(swanConfig.pathId);
+    flusher1["PathId"] = StringToInt(swanConfig.pathId);
 
     flushersNode.push_back(flusher1);
     rootNode["flushers"] = flushersNode;
@@ -237,15 +236,14 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     return emitter.c_str();
 }
 
-void SwanConfigProvider::convertContainerConfigs(Configs & result,
-                                                 std::string & serviceName,
+void SwanConfigProvider::convertContainerConfigs(std::string & serviceName,
                                                  std::string & taskType,
                                                  const Json::Value & commonConfig,
                                                  const Json::Value & clusterConfig,
                                                  const Json::Value & sourceConfig,
                                                  const Json::Value & targetConfig,
                                                  const Json::Value & eventMetricsConfig,
-                                                 std::vector<Container> & containers) const {
+                                                 std::vector<Container> & containers) {
     std::string filterRule = clusterConfig["filterRule"].asString();
 
     std::set<std::string> clusterNames;
@@ -263,7 +261,7 @@ void SwanConfigProvider::convertContainerConfigs(Configs & result,
         // std::string fileSuffix = sourceConfig["matchConfig"]["fileSuffix"].asString();
 
        // 发送配置
-        Configs targetProperties = getSendMQProperties(targetConfig["properties"].asString());
+        auto targetProperties = getSendMQProperties(targetConfig["properties"].asString());
         const std::pair<std::string, std::string> auth = getUsernamePasswd(targetProperties["sasl_jaas_config"]);
 
         SwanConfig swanConfig;
@@ -275,7 +273,8 @@ void SwanConfigProvider::convertContainerConfigs(Configs & result,
         swanConfig.username = auth.first;
         swanConfig.password = auth.second;
         swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
-        swanConfig.brokers = SplitString(targetProperties["gateway"], ";");
+        swanConfig.brokers = targetProperties["gateway"];
+        std::replace(swanConfig.brokers.begin(), swanConfig.brokers.end(), ';', ',');
         swanConfig.hostName = containerName;
         swanConfig.odinLeaf = container.clusterName;
         swanConfig.originalAppName = container.serviceName;
@@ -300,27 +299,23 @@ void SwanConfigProvider::convertContainerConfigs(Configs & result,
             swanConfig.pathId = std::to_string(logPath["pathId"].asInt());
 
             std::string yamlConfigName = containerName + "_" + swanConfig.logModelId + "_"   + swanConfig.pathId + ".yaml";
-            std::string yamlConfig = generateYamlConfig(swanConfig);
-
-            result[yamlConfigName] = yamlConfig;
+            configs[std::move(yamlConfigName)] = std::move(generateYamlConfig(swanConfig));
         }
     }
 }
 
-SwanConfigProvider::Configs SwanConfigProvider::convertContainerTasks(const std::string & configStr, std::unordered_map<std::string, std::vector<Container>> & containerMap) const {
-    Configs result;
-
+void SwanConfigProvider::convertContainerTasks(const std::string & configStr, std::unordered_map<std::string, std::vector<Container>> & containerMap) {
     std::istringstream inputStream(configStr);
     Json::Value root;
     Json::CharReaderBuilder builder;
     std::string errs;
     bool parseResult = Json::parseFromStream(builder, inputStream, &root, &errs);
     if (!parseResult)
-        return result;
+        return;
 
     const Json::Int code = root["code"].asInt();
     if (code != 0) {
-        return result;
+        return;
     }
 
     const Json::Value & data = root["data"]["modelConfigs"];
@@ -347,13 +342,11 @@ SwanConfigProvider::Configs SwanConfigProvider::convertContainerTasks(const std:
         const Json::Value & targetConfig = item["targetConfig"];
         std::vector<Container> & containers = it->second;
 
-        convertContainerConfigs(result, serviceName, taskType, commonConfig, clusterConfig, sourceConfig, targetConfig, eventMetricsConfig, containers);
+        convertContainerConfigs(serviceName, taskType, commonConfig, clusterConfig, sourceConfig, targetConfig, eventMetricsConfig, containers);
     }
-
-    return result;
 }
 
-SwanConfigProvider::Configs SwanConfigProvider::getDirectConfigs(const std::string & hostname) const {
+void SwanConfigProvider::generateDirectConfigs(const std::string & hostname) {
     try
     {
         // 1. 从AM获取采集配置
@@ -374,9 +367,6 @@ SwanConfigProvider::Configs SwanConfigProvider::getDirectConfigs(const std::stri
         if (!parseResult) {
             throw std::runtime_error("parse config exception: " + errs);
         }
-
-        // 2. Swan配置转换为logtail配置
-        Configs logtailConfigs;
 
         const Json::Value & modelConfigs = root["data"]["modelConfigs"];
         for (const Json::Value & modelConfig : modelConfigs) {
@@ -403,7 +393,8 @@ SwanConfigProvider::Configs SwanConfigProvider::getDirectConfigs(const std::stri
             // std::string fileSuffix = sourceConfig["matchConfig"]["fileSuffix"].asString();
 
             swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
-            swanConfig.brokers = SplitString(sendMQProperties["gateway"], ";");
+            swanConfig.brokers = sendMQProperties["gateway"];
+            std::replace(swanConfig.brokers.begin(), swanConfig.brokers.end(), ';', ',');
             swanConfig.originalAppName = eventMetricsConfig["originalAppName"].asString();
             swanConfig.odinLeaf = eventMetricsConfig["odinLeaf"].asString();
             swanConfig.logModelId = std::to_string(commonConfig["modelId"].asInt());
@@ -432,17 +423,15 @@ SwanConfigProvider::Configs SwanConfigProvider::getDirectConfigs(const std::stri
                 swanConfig.pathId = std::to_string(logPath["pathId"].asInt());
 
                 std::string yamlConfigName = swanConfig.logModelId + "_" + swanConfig.pathId + ".yaml";
-                logtailConfigs[yamlConfigName] = generateYamlConfig(swanConfig);
+                configs[std::move(yamlConfigName)] = std::move(generateYamlConfig(swanConfig));
             }
         }
-        return logtailConfigs;
     } catch (const std::exception& e) {
-        LOG_ERROR(sLogger, ("get direct configs exception: {}", e.what()));
+        throw std::runtime_error("get direct configs exception: " + std::string(e.what()));
     }
-    return {};
 }
 
-SwanConfigProvider::Configs SwanConfigProvider::getContainerConfigs(const std::string & hostname) const {
+void SwanConfigProvider::generateContainerConfigs(const std::string & hostname) {
     try {
         // 1. 获取容器列表
         std::vector<Container> containers = getContainers();
@@ -494,31 +483,41 @@ SwanConfigProvider::Configs SwanConfigProvider::getContainerConfigs(const std::s
         }
 
         // 5. 转换配置
-        return convertContainerTasks(response.body, serviceAndContainersMapping);
+        convertContainerTasks(response.body, serviceAndContainersMapping);
     } catch (const std::exception& e) {
         throw std::runtime_error("get container config exception: " +  ToString(e.what()));
     }
-    return {};
 }
 
-
-SwanConfigProvider::Configs SwanConfigProvider::getConfigs() const {
-    /// TODO 异常处理
+std::unordered_map<std::string, std::string> & SwanConfigProvider::getConfigs() {
     // 1. 获取主机名
     std::string hostname = GetHostName();
 
-    // 2. 获取直采任务配置
-    Configs directTasks = getDirectConfigs(hostname);
-
-    if (!isDDCloudHost(hostname)) {
-        return directTasks;
+    configs.clear();
+    try {
+        // 2. 获取直采任务配置
+        generateDirectConfigs(hostname);
+    }
+    catch(const std::exception& e) {
+        if (!isDDCloudHost(hostname)) {
+            throw e;
+        }
+        LOG_ERROR(sLogger, ("generate direct configs failed.", e.what()));
     }
 
-    // 3. 获取容器任务配置
-    Configs containerTasks = getContainerConfigs(hostname);
-    directTasks.insert(containerTasks.begin(), containerTasks.end());
-    LOG_DEBUG(sLogger, ("swan configs size.", directTasks.size()));
-    return directTasks;
+    try {
+        // 3. 获取容器的任务配置
+        generateContainerConfigs(hostname);
+    } catch(const std::exception& e) {
+        if (configs.empty()) {
+            throw e;
+        }
+        LOG_ERROR(sLogger, ("generate container configs failed.", e.what()));
+        return configs;
+    }
+
+    LOG_INFO(sLogger, ("swan configs size.", configs.size()));
+    return configs;
 }
 
 } // namespace logtail

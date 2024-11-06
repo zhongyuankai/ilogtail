@@ -45,6 +45,9 @@
 #include "pipeline/PipelineManager.h"
 #include "sdk/Client.h"
 #include "sender/Sender.h"
+#include "flusher/KafkaSender.h"
+#include "flusher/FlusherKafka.h"
+#include "flusher/KafkaAggregator.h"
 #ifdef __ENTERPRISE__
 #include "config/provider/EnterpriseConfigProvider.h"
 #endif
@@ -63,7 +66,7 @@ DEFINE_FLAG_INT32(debug_logprocess_queue_flag, "0 disable, 1 true, 2 false", 0);
 DEFINE_FLAG_BOOL(enable_chinese_tag_path, "Enable Chinese __tag__.__path__", true);
 #endif
 DEFINE_FLAG_STRING(raw_log_tag, "", "__raw__");
-DEFINE_FLAG_INT32(default_flush_merged_buffer_interval, "default flush merged buffer, seconds", 1);
+DEFINE_FLAG_INT32(default_flush_merged_buffer_interval, "default flush merged buffer, seconds", 5);
 DEFINE_FLAG_BOOL(enable_new_pipeline, "use C++ pipline with refactoried plugins", true);
 
 namespace logtail {
@@ -98,7 +101,7 @@ void LogProcess::Start() {
     mInitialized = true;
     // mLocalTimeZoneOffsetSecond = GetLocalTimeZoneOffsetSecond();
     // LOG_INFO(sLogger, ("local timezone offset second", mLocalTimeZoneOffsetSecond));
-    Sender::Instance()->SetFeedBackInterface(&mLogFeedbackQueue);
+    KafkaSender::Instance()->SetFeedBackInterface(&mLogFeedbackQueue);
     mThreadCount = AppConfig::GetInstance()->GetProcessThreadCount();
     // mBufferCountLimit = INT32_FLAG(process_buffer_count_upperlimit_perthread) * mThreadCount;
     mProcessThreads = new ThreadPtr[mThreadCount];
@@ -224,7 +227,7 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
         int32_t curTime = time(NULL);
         if (threadNo == 0 && curTime - lastMergeTime >= INT32_FLAG(default_flush_merged_buffer_interval)) {
             lastMergeTime = curTime;
-            static Aggregator* aggregator = Aggregator::GetInstance();
+            static KafkaAggregator* aggregator = KafkaAggregator::GetInstance();
             aggregator->FlushReadyBuffer();
         }
 
@@ -266,7 +269,7 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
         // if have no data, wait 100 ms for new data or timeout, then continue to check again
         LogBuffer* tmpLogBuffer = NULL;
         if (!mLogFeedbackQueue.CheckAndPopNextItem(
-                logstoreKey, tmpLogBuffer, Sender::Instance()->GetSenderFeedBackInterface(), threadNo, mThreadCount)) {
+                logstoreKey, tmpLogBuffer, KafkaSender::Instance()->GetSenderFeedBackInterface(), threadNo, mThreadCount)) {
             mLogFeedbackQueue.Wait(100);
             continue;
         }
@@ -309,7 +312,8 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
                 continue;
             }
 
-            std::vector<std::unique_ptr<sls_logs::LogGroup>> logGroupList;
+            // std::vector<std::unique_ptr<sls_logs::LogGroup>> logGroupList;
+            std::vector<PipelineEventGroup> logGroupList;
             ProcessProfile profile;
             profile.readBytes = readBytes;
             int32_t parseStartTime = (int32_t)time(NULL);
@@ -325,7 +329,7 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
 
             int logSize = 0;
             for (auto& pLogGroup : logGroupList) {
-                logSize += pLogGroup->logs_size();
+                logSize += pLogGroup.EventGroupSizeBytes();
             }
             // add lines count
             s_processLines += profile.splitLines;
@@ -344,11 +348,20 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
                                                                                                             category));
             }
 
-            if (logSize > 0 && needSend) { // send log group
-                const FlusherSLS* flusherSLS = static_cast<const FlusherSLS*>(pipeline->GetFlushers()[0]->GetPlugin());
+            if (!logGroupList.empty()) { // send log group
+                FlusherKafka * flusherKafka = static_cast<FlusherKafka*>(pipeline->GetFlushers()[0]->GetPlugin());
+                // flusherkafka->flush(logGroupList);
 
-                IntegrityConfig* integrityConfig = NULL;
-                LineCountConfig* lineCountConfig = NULL;
+                static KafkaSender * sender = KafkaSender::Instance();
+                if (!sender->Send(logGroupList, logSize, flusherKafka)) {
+                    LOG_ERROR(sLogger,
+                            ("push file data into batch map fail, discard logs", logSize)
+                            ("configName", pipeline->GetContext().GetConfigName()));
+                }
+                // const FlusherSLS* flusherSLS = static_cast<const FlusherSLS*>(pipeline->GetFlushers()[0]->GetPlugin());
+
+                // IntegrityConfig* integrityConfig = NULL;
+                // LineCountConfig* lineCountConfig = NULL;
                 // if (config->mIntegrityConfig->mIntegritySwitch) {
                 //     integrityConfig = new IntegrityConfig(config->mIntegrityConfig->mAliuid,
                 //                                           config->mIntegrityConfig->mIntegritySwitch,
@@ -364,50 +377,50 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
                 //                                           config->mLineCountConfig->mLineCountProjectName,
                 //                                           config->mLineCountConfig->mLineCountLogstore);
                 // }
-                IntegrityConfigPtr integrityConfigPtr(integrityConfig);
-                LineCountConfigPtr lineCountConfigPtr(lineCountConfig);
+                // IntegrityConfigPtr integrityConfigPtr(integrityConfig);
+                // LineCountConfigPtr lineCountConfigPtr(lineCountConfig);
 
-                string compressStr = "zstd";
-                if (flusherSLS->mCompressType == FlusherSLS::CompressType::NONE) {
-                    compressStr = "none";
-                } else if (flusherSLS->mCompressType == FlusherSLS::CompressType::LZ4) {
-                    compressStr = "lz4";
-                }
-                sls_logs::SlsCompressType compressType = sdk::Client::GetCompressType(compressStr);
+                // string compressStr = "zstd";
+                // if (flusherSLS->mCompressType == FlusherSLS::CompressType::NONE) {
+                //     compressStr = "none";
+                // } else if (flusherSLS->mCompressType == FlusherSLS::CompressType::LZ4) {
+                //     compressStr = "lz4";
+                // }
+                // sls_logs::SlsCompressType compressType = sdk::Client::GetCompressType(compressStr);
 
-                for (auto& pLogGroup : logGroupList) {
-                    LogGroupContext context(flusherSLS->mRegion,
-                                            projectName,
-                                            flusherSLS->mLogstore,
-                                            compressType,
-                                            logBuffer->fileInfo,
-                                            integrityConfigPtr,
-                                            lineCountConfigPtr,
-                                            -1,
-                                            false,
-                                            false,
-                                            logBuffer->exactlyOnceCheckpoint);
-                    if (!Sender::Instance()->Send(
-                            projectName,
-                            logFileReader->GetSourceId(),
-                            *(pLogGroup.get()),
-                            logFileReader->GetLogGroupKey(),
-                            flusherSLS,
-                            flusherSLS->mBatch.mMergeType,
-                            (uint32_t)(profile.logGroupSize * DOUBLE_FLAG(loggroup_bytes_inflation)),
-                            "",
-                            convertedPath,
-                            context)) {
-                        LogtailAlarm::GetInstance()->SendAlarm(DISCARD_DATA_ALARM,
-                                                               "push file data into batch map fail",
-                                                               projectName,
-                                                               category,
-                                                               pipeline->GetContext().GetRegion());
-                        LOG_ERROR(sLogger,
-                                  ("push file data into batch map fail, discard logs", pLogGroup->logs_size())(
-                                      "project", projectName)("logstore", category)("filename", convertedPath));
-                    }
-                }
+                // for (auto& pLogGroup : logGroupList) {
+                //     LogGroupContext context(flusherSLS->mRegion,
+                //                             projectName,
+                //                             flusherSLS->mLogstore,
+                //                             compressType,
+                //                             logBuffer->fileInfo,
+                //                             integrityConfigPtr,
+                //                             lineCountConfigPtr,
+                //                             -1,
+                //                             false,
+                //                             false,
+                //                             logBuffer->exactlyOnceCheckpoint);
+                //     if (!Sender::Instance()->Send(
+                //             projectName,
+                //             logFileReader->GetSourceId(),
+                //             *(pLogGroup.get()),
+                //             logFileReader->GetLogGroupKey(),
+                //             flusherSLS,
+                //             flusherSLS->mBatch.mMergeType,
+                //             (uint32_t)(profile.logGroupSize * DOUBLE_FLAG(loggroup_bytes_inflation)),
+                //             "",
+                //             convertedPath,
+                //             context)) {
+                //         LogtailAlarm::GetInstance()->SendAlarm(DISCARD_DATA_ALARM,
+                //                                                "push file data into batch map fail",
+                //                                                projectName,
+                //                                                category,
+                //                                                pipeline->GetContext().GetRegion());
+                //         LOG_ERROR(sLogger,
+                //                   ("push file data into batch map fail, discard logs", pLogGroup->logs_size())(
+                //                       "project", projectName)("logstore", category)("filename", convertedPath));
+                //     }
+                // }
             }
 
             // 统计信息需要放在最外面，确保Pipeline在各种条件下，都能统计到
@@ -444,7 +457,7 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
 
 int LogProcess::ProcessBuffer(std::shared_ptr<LogBuffer>& logBuffer,
                               LogFileReaderPtr& logFileReader,
-                              std::vector<std::unique_ptr<sls_logs::LogGroup>>& resultGroupList,
+                              std::vector<PipelineEventGroup>& eventGroupList,
                               ProcessProfile& profile) {
     auto pipeline = PipelineManager::GetInstance()->FindPipelineByName(
         logFileReader->GetConfigName()); // pipeline should be set in the loggroup by input
@@ -456,12 +469,18 @@ int LogProcess::ProcessBuffer(std::shared_ptr<LogBuffer>& logBuffer,
         return -1;
     }
 
-    std::vector<PipelineEventGroup> eventGroupList;
+    // std::vector<PipelineEventGroup> eventGroupList;
     {
         // construct a logGroup, it should be moved into input later
         PipelineEventGroup eventGroup{std::shared_ptr<SourceBuffer>(std::move(logBuffer->sourcebuffer))};
+        eventGroup.SetLogSize(logBuffer->readLength);
         // TODO: metadata should be set in reader
         FillEventGroupMetadata(*logBuffer, eventGroup);
+
+        const std::vector<sls_logs::LogTag>& extraTags = logFileReader->GetExtraTags();
+        for (size_t i = 0; i < extraTags.size(); ++i) {
+            eventGroup.SetTag(extraTags[i].key(), extraTags[i].value());
+        }
 
         LogEvent* event = eventGroup.AddLogEvent();
         time_t logtime = time(NULL);
@@ -482,25 +501,25 @@ int LogProcess::ProcessBuffer(std::shared_ptr<LogBuffer>& logBuffer,
     profile = processProfile;
     processProfile.Reset();
 
-    for (auto& eventGroup : eventGroupList) {
-        // fill protobuf
-        resultGroupList.emplace_back(new sls_logs::LogGroup());
-        auto& resultGroup = resultGroupList.back();
-        FillLogGroupLogs(eventGroup, *resultGroup, pipeline->GetContext().GetGlobalConfig().mEnableTimestampNanosecond);
-        FillLogGroupTags(eventGroup, logFileReader, *resultGroup);
-        if (pipeline->IsFlushingThroughGoPipeline()) {
-            // LogGroup will be deleted outside
-            LogtailPlugin::GetInstance()->ProcessLogGroup(
-                logFileReader->GetConfigName(), *resultGroup, logFileReader->GetSourceId());
-            return 1;
-        }
-        // record log positions for exactly once. TODO: make it correct for each log, current implementation requires
-        // loggroup send in one shot
-        if (logBuffer->exactlyOnceCheckpoint) {
-            std::pair<size_t, size_t> pos(logBuffer->readOffset, logBuffer->readLength);
-            logBuffer->exactlyOnceCheckpoint->positions.assign(eventGroup.GetEvents().size(), pos);
-        }
-    }
+    // for (auto& eventGroup : eventGroupList) {
+    //     // fill protobuf
+    //     resultGroupList.emplace_back(new sls_logs::LogGroup());
+    //     auto& resultGroup = resultGroupList.back();
+    //     FillLogGroupLogs(eventGroup, *resultGroup, pipeline->GetContext().GetGlobalConfig().mEnableTimestampNanosecond);
+    //     FillLogGroupTags(eventGroup, logFileReader, *resultGroup);
+    //     if (pipeline->IsFlushingThroughGoPipeline()) {
+    //         // LogGroup will be deleted outside
+    //         LogtailPlugin::GetInstance()->ProcessLogGroup(
+    //             logFileReader->GetConfigName(), *resultGroup, logFileReader->GetSourceId());
+    //         return 1;
+    //     }
+    //     // record log positions for exactly once. TODO: make it correct for each log, current implementation requires
+    //     // loggroup send in one shot
+    //     if (logBuffer->exactlyOnceCheckpoint) {
+    //         std::pair<size_t, size_t> pos(logBuffer->readOffset, logBuffer->readLength);
+    //         logBuffer->exactlyOnceCheckpoint->positions.assign(eventGroup.GetEvents().size(), pos);
+    //     }
+    // }
     return 0;
 }
 

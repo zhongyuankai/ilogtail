@@ -25,9 +25,7 @@ public:
 
     void Init();
 
-    using Configs = std::unordered_map<std::string, std::string>;
-
-    Configs getConfigs() const;
+    std::unordered_map<std::string, std::string> & getConfigs();
 
 private:
     SwanConfigProvider() = default;
@@ -46,7 +44,7 @@ private:
         std::string isService;
         std::string pathId;
         std::string odinSu;
-        std::vector<std::string> brokers;
+        std::string brokers;
         std::string topic;
         std::string username;
         std::string password;
@@ -68,37 +66,36 @@ private:
     };
 
     /// 转换swan非容器化采集
-    Configs getDirectConfigs(const std::string & hostname) const;
+    void generateDirectConfigs(const std::string & hostname);
 
     /// 转换swan容器化采集
-    Configs getContainerConfigs(const std::string & hostname) const;
+    void generateContainerConfigs(const std::string & hostname);
 
     /// 生成yaml任务配置
-    std::string generateYamlConfig(const SwanConfig & swanConfig) const;
+    std::string generateYamlConfig(const SwanConfig & swanConfig);
 
-    std::vector<Container> getContainers() const;
+    std::vector<Container> getContainers();
 
     /// 转换采集配置
-    Configs convertContainerTasks(const std::string & configStr, std::unordered_map<std::string, std::vector<Container>> & containerMap) const;
+    void convertContainerTasks(const std::string & configStr, std::unordered_map<std::string, std::vector<Container>> & containerMap);
 
-    void convertContainerConfigs(Configs & result,
-                        std::string & serviceName,
-                        std::string & taskType,
-                        const Json::Value & commonConfig,
-                        const Json::Value & clusterConfig,
-                        const Json::Value & sourceConfig,
-                        const Json::Value & targetConfig,
-                        const Json::Value & eventMetricsConfig,
-                        std::vector<Container> & containers) const;
+    void convertContainerConfigs(std::string & serviceName,
+                                std::string & taskType,
+                                const Json::Value & commonConfig,
+                                const Json::Value & clusterConfig,
+                                const Json::Value & sourceConfig,
+                                const Json::Value & targetConfig,
+                                const Json::Value & eventMetricsConfig,
+                                std::vector<Container> & containers);
 
     /// 获取容器的真实的物理路径
-    std::string getContainerRealLogPath(const std::string & dockerName, const std::string & dockerPath) const;
+    std::string getContainerRealLogPath(const std::string & dockerName, const std::string & dockerPath);
 
     bool isDDCloudHost(const std::string & hostname) const {
-        return StartWith(hostname, DDCLOUD_HOST_PREFIX);
+        return StartWith(hostname, ddcloud_host_prefix);
     }
 
-    bool isNeededContainer(const std::string & filterRule, const std::set<std::string> & clusterNames, const Container & container) const;
+    bool isNeededContainer(const std::string & filterRule, const std::set<std::string> & clusterNames, const Container & container);
 
     /// 物理机直采的任务配置
     std::string agent_manager_physical_config_api;
@@ -106,11 +103,13 @@ private:
     std::string agent_manager_container_config_api;
 
     /// didi-cloud
-    const std::string DDCLOUD_HOST_PREFIX = "dcloud-";
+    std::string ddcloud_host_prefix;
     /// 获取容器API
     std::string ddcloud_pods_api;
     /// 容器路径与物理机路径映射
     std::string ddcloud_pods_dir_map_api;
+
+    std::unordered_map<std::string, std::string> configs;
 };
 
 } // namespace logtail

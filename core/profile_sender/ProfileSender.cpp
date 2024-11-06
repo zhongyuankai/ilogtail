@@ -109,71 +109,71 @@ void ProfileSender::SetProfileProjectName(const string& region, const string& pr
 }
 
 void ProfileSender::SendToProfileProject(const string& region, sls_logs::LogGroup& logGroup) {
-    if (0 == logGroup.category().compare("logtail_status_profile")) {
-        SendRunningStatus(logGroup);
-    }
+    // if (0 == logGroup.category().compare("logtail_status_profile")) {
+    //     SendRunningStatus(logGroup);
+    // }
 
-    // Opensource is not necessary to synchronize data with SLS
-    Sender::Instance()->RestLastSenderTime();
+    // // Opensource is not necessary to synchronize data with SLS
+    // Sender::Instance()->RestLastSenderTime();
     return;
 }
 
 void ProfileSender::SendRunningStatus(sls_logs::LogGroup& logGroup) {
-    if (!BOOL_FLAG(send_running_status)) {
-        return;
-    }
+    // if (!BOOL_FLAG(send_running_status)) {
+    //     return;
+    // }
 
-    static int controlFeq = 0;
+    // static int controlFeq = 0;
 
-    // every 12 hours
-    if (0 == logGroup.logs_size() || 0 != controlFeq++ % (60 * 12)) {
-        return;
-    }
+    // // every 12 hours
+    // if (0 == logGroup.logs_size() || 0 != controlFeq++ % (60 * 12)) {
+    //     return;
+    // }
 
-    string region = "cn-shanghai";
-    string project = "ilogtail-community-edition";
-    string logstore = "ilogtail-online";
-    string endpoint = region + ".log.aliyuncs.com";
+    // string region = "cn-shanghai";
+    // string project = "ilogtail-community-edition";
+    // string logstore = "ilogtail-online";
+    // string endpoint = region + ".log.aliyuncs.com";
 
-    Json::Value logtailStatus;
-    logtailStatus["__topic__"] = "logtail_status_profile";
-    unordered_set<string> selectedFields(
-        {"cpu", "mem", "version", "instance_key", "os", "os_detail", "load", "status", "metric_json", "plugin_stats"});
-    Json::Value status;
-    const sls_logs::Log& log = logGroup.logs(0);
-    for (int32_t conIdx = 0; conIdx < log.contents_size(); ++conIdx) {
-        const sls_logs::Log_Content& content = log.contents(conIdx);
-        const string& key = content.key();
-        const string& value = content.value();
-        if (selectedFields.find(key) != selectedFields.end()) {
-            status[key] = value;
-        }
-    }
-    logtailStatus["__logs__"][0] = status;
-    string logBody = logtailStatus.toStyledString();
-    sdk::Client client(endpoint, "", "", INT32_FLAG(sls_client_send_timeout), "", "");
-    SLSControl::GetInstance()->SetSlsSendClientCommonParam(&client);
-    try {
-        time_t curTime = time(NULL);
-        unique_ptr<LoggroupTimeValue> data(new LoggroupTimeValue(
-            project, logstore, "", "", false, "", region, LOGGROUP_COMPRESSED, 1, logBody.size(), curTime, "", 0));
+    // Json::Value logtailStatus;
+    // logtailStatus["__topic__"] = "logtail_status_profile";
+    // unordered_set<string> selectedFields(
+    //     {"cpu", "mem", "version", "instance_key", "os", "os_detail", "load", "status", "metric_json", "plugin_stats"});
+    // Json::Value status;
+    // const sls_logs::Log& log = logGroup.logs(0);
+    // for (int32_t conIdx = 0; conIdx < log.contents_size(); ++conIdx) {
+    //     const sls_logs::Log_Content& content = log.contents(conIdx);
+    //     const string& key = content.key();
+    //     const string& value = content.value();
+    //     if (selectedFields.find(key) != selectedFields.end()) {
+    //         status[key] = value;
+    //     }
+    // }
+    // logtailStatus["__logs__"][0] = status;
+    // string logBody = logtailStatus.toStyledString();
+    // sdk::Client client(endpoint, "", "", INT32_FLAG(sls_client_send_timeout), "", "");
+    // SLSControl::GetInstance()->SetSlsSendClientCommonParam(&client);
+    // try {
+    //     time_t curTime = time(NULL);
+    //     unique_ptr<LoggroupTimeValue> data(new LoggroupTimeValue(
+    //         project, logstore, "", "", false, "", region, LOGGROUP_COMPRESSED, 1, logBody.size(), curTime, "", 0));
 
-        if (!CompressLz4(logBody, data->mLogData)) {
-            LOG_ERROR(sLogger, ("lz4 compress data", "fail"));
-            return;
-        }
+    //     if (!CompressLz4(logBody, data->mLogData)) {
+    //         LOG_ERROR(sLogger, ("lz4 compress data", "fail"));
+    //         return;
+    //     }
 
-        sdk::PostLogStoreLogsResponse resp = client.PostLogUsingWebTracking(
-            data->mProjectName, data->mLogstore, sls_logs::SLS_CMP_LZ4, data->mLogData, data->mRawSize);
+    //     sdk::PostLogStoreLogsResponse resp = client.PostLogUsingWebTracking(
+    //         data->mProjectName, data->mLogstore, sls_logs::SLS_CMP_LZ4, data->mLogData, data->mRawSize);
 
-        LOG_DEBUG(sLogger,
-                  ("SendToProfileProject",
-                   "success")("logBody", logBody)("requestId", resp.requestId)("statusCode", resp.statusCode));
-    } catch (const sdk::LOGException& e) {
-        LOG_DEBUG(sLogger,
-                  ("SendToProfileProject", "fail")("logBody", logBody)("errCode", e.GetErrorCode())("errMsg",
-                                                                                                    e.GetMessage()));
-    }
+    //     LOG_DEBUG(sLogger,
+    //               ("SendToProfileProject",
+    //                "success")("logBody", logBody)("requestId", resp.requestId)("statusCode", resp.statusCode));
+    // } catch (const sdk::LOGException& e) {
+    //     LOG_DEBUG(sLogger,
+    //               ("SendToProfileProject", "fail")("logBody", logBody)("errCode", e.GetErrorCode())("errMsg",
+    //                                                                                                 e.GetMessage()));
+    // }
 }
 
 bool ProfileSender::SendInstantly(sls_logs::LogGroup& logGroup,

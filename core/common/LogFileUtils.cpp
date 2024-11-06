@@ -59,7 +59,7 @@ time_t parseTime(const StringView & timeString, const std::string & timeFormat) 
 
         absl::string_view s(timeString.data(), timeString.size());
         absl::Time time;
-        std::string err;
+        static thread_local std::string err;
         static absl::TimeZone local_tz = absl::LocalTimeZone();
         if (absl::ParseTime(timeFormat, s, local_tz, &time, &err)) {
             return absl::ToUnixSeconds(time);
@@ -67,6 +67,7 @@ time_t parseTime(const StringView & timeString, const std::string & timeFormat) 
     } catch (...) {
         return -1;
     }
+    return -1;
 }
 
 std::string convertJavaFormatToStrptime(const std::string & javaFormat) {
