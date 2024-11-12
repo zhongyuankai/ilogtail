@@ -31,6 +31,17 @@ cmake_dependent_option(ENABLE_COMPATIBLE_MODE "Build Logtail in compatible mode 
 cmake_dependent_option(ENABLE_STATIC_LINK_CRT "Build Logtail by linking CRT statically" OFF "LINUX" OFF)
 option(WITHOUTGDB "Build Logtail without gdb")
 option(BUILD_LOGTAIL_UT "Build unit test for Logtail")
+option(ENABLE_SIMD "Enable vectorization support" ON)
+
+if (ENABLE_SIMD)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+
+    if (COMPILER_SUPPORTS_AVX2)
+        add_definitions(-DUSE_SIMD_AVX2)
+    endif ()
+endif ()
+
 
 if (ENABLE_ENTERPRISE)
     message(STATUS "Enable Enterprise Feature.")
