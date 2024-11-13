@@ -158,7 +158,7 @@ function start() {
 }
 
 function stop() {
-    local timeout=90
+    local timeout=120
     pid=$(get_pid)
     if [ "$pid" == "" ];then
         echo "$app is stopped!"

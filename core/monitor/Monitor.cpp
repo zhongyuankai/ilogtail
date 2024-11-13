@@ -196,12 +196,12 @@ void LogtailMonitor::Monitor() {
                 // Returning true means too much violations, so we have to prepare to restart
                 // logtail to release resource.
                 // Mainly for controlling memory because we have no idea to descrease memory usage.
-                if (CheckSoftCpuLimit() || CheckSoftMemLimit()) {
-                    LOG_ERROR(sLogger,
-                              ("Resource used by program exceeds upper limit for some time",
-                               "prepare restart Logtail")("cpu_usage", mCpuStat.mCpuUsage)("mem_rss", mMemStat.mRss));
+                // if (CheckSoftCpuLimit() || CheckSoftMemLimit()) {
+                    // LOG_ERROR(sLogger,
+                            //   ("Resource used by program exceeds upper limit for some time",
+                            //    "prepare restart Logtail")("cpu_usage", mCpuStat.mCpuUsage)("mem_rss", mMemStat.mRss));
                     // Suicide();
-                }
+                // }
 
                 if (IsHostIpChanged()) {
                     Suicide();

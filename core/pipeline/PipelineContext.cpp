@@ -15,6 +15,7 @@
 #include "pipeline/PipelineContext.h"
 
 #include "flusher/FlusherSLS.h"
+#include "flusher/FlusherKafka.h"
 
 using namespace std;
 
@@ -35,7 +36,9 @@ const string& PipelineContext::GetRegion() const {
 }
 
 LogstoreFeedBackKey PipelineContext::GetLogstoreKey() const {
-    if (mSLSInfo) {
+    if (mFlusherKafka) {
+        return mFlusherKafka->GetLogstoreKey();
+    } else if (mSLSInfo) {
         return mSLSInfo->GetLogstoreKey();
     }
     static LogstoreFeedBackKey key = GenerateLogstoreFeedBackKey(sEmptyString, sEmptyString);

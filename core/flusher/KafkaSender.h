@@ -70,6 +70,7 @@ private:
     std::atomic_int mLastSendDataTime{0};
 
     std::atomic_int sendFailedCount{0};
+    std::atomic_int pushQueueFailedCount{0};
 
     LogstoreKafkaSenderQueue<KafkaSenderQueueParam> mSenderQueue;
 
