@@ -24,11 +24,10 @@ KafkaSender::KafkaSender() {
     if (concurrencyCount < 10) {
         concurrencyCount = 10;
     }
-    // if (concurrencyCount > 50) {
-    //     concurrencyCount = 50;
-    // }
-    // size_t max_queue_size = std::max(, (int)(concurrencyCount * 2));
-    mSenderQueue.SetParam((size_t)(concurrencyCount * 1.5), (size_t)(concurrencyCount * 2), (size_t)(concurrencyCount * 3));
+    if (concurrencyCount > 50) {
+        concurrencyCount = 50;
+    }
+    mSenderQueue.SetParam((size_t)(concurrencyCount * 1.5), (size_t)(concurrencyCount * 2), 200);
     LOG_INFO(sLogger, ("Set sender queue param depend value", concurrencyCount));
 
     new Thread(std::bind(&KafkaSender::DaemonSender, this)); 
@@ -93,15 +92,17 @@ void KafkaSender::DaemonSender() {
             sMonitor->UpdateMetric("send_queue_size", queueSize);
             sMonitor->UpdateMetric("send_error_count", sendErrorCount);
             sMonitor->UpdateMetric("send_error_queue_full_count", sendErrorQueueFullCount);
+            sendErrorQueueFullCount = 0;
             sMonitor->UpdateMetric("send_failed_count", sendFailedCount.load());
+            sMonitor->UpdateMetric("push_queue_failed_count", pushQueueFailedCount.load());
         }
 
-        std::vector<LoggroupEntry*> logGroupToSend;
         mSenderQueue.Wait(1000);
 
         bool singleBatchMapFull = false;
 
-        mSenderQueue.PopAllItem(logGroupToSend, curTime, singleBatchMapFull);
+        static std::vector<LoggroupEntry*> logGroupToSend;
+        mSenderQueue.PopAllItem(logGroupToSend);
 
         mLastDaemonRunTime = curTime;
 
@@ -119,7 +120,7 @@ void KafkaSender::DaemonSender() {
                     producer = it->second.producer;
                 } else {
                     LOG_ERROR(sLogger, ("This is a bug, Kafka producer is NULL, KafkaProducerKey", data->mKafkaProducerKey));
-                    delete data;
+                    mSenderQueue.RemoveItem(data);
                     continue;
                 }
             }
@@ -138,7 +139,7 @@ void KafkaSender::DaemonSender() {
                 );
 
                 if (err == RdKafka::ERR__QUEUE_FULL) {
-                    producer->poll(1000);   /*block for max 1000ms*/
+                    producer->poll(100);   /*block for max 1000ms*/
                     ++sendErrorQueueFullCount;
                     continue;
                 }
@@ -147,13 +148,14 @@ void KafkaSender::DaemonSender() {
                     LOG_ERROR(sLogger, ("Failed to send kafka", err));
                     ++sendErrorCount;
                 }
-                break;
                 producer->poll(0);
+                break;
             }
+
 
             sendBufferBytes += data->mLogData.Size();
             sendLines += data->mLogLines;
-            delete data;
+            mSenderQueue.RemoveItem(data);
         }
         sendTime += GetCurrentTimeInMilliSeconds() - startTime;
 
@@ -190,6 +192,7 @@ bool KafkaSender::PushQueue(LoggroupEntry * data) {
         }
         usleep(10 * 1000);
     }
+    ++pushQueueFailedCount;
     LOG_ERROR(sLogger,
               ("push file data into queue fail, discard log lines",
                data->mLogLines)("topic", data->mTopic));
@@ -215,11 +218,11 @@ bool KafkaSender::CreateKafkaProducer(std::string & brokers, std::string & usern
         { "sasl.username", username },
         { "sasl.password", password },
         { "compression.codec", "lz4" },
-        { "batch.num.messages", "40000" },
-        { "linger.ms", "2000" },
+        { "batch.num.messages", "10000" },
         { "message.max.bytes", "52428800" },
-        { "queue.buffering.max.kbytes", "314572800" },
-        { "queue.buffering.max.messages", "1000000" },
+        { "queue.buffering.max.kbytes", "4194304" },
+        { "queue.buffering.max.messages", "100000" },
+        { "queue.buffering.max.ms", "200" },
     };
 
     std::string errstr;

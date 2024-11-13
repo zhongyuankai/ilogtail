@@ -77,8 +77,10 @@ LogProcess::LogProcess() : mAccessProcessThreadRWL(ReadWriteLock::PREFER_WRITER)
         concurrencyCount = 20;
     }
 
-    size_t max_queue_size = std::max(100, (int)(concurrencyCount * 2));
-    mLogFeedbackQueue.SetParam(concurrencyCount, (size_t)(concurrencyCount * 1.5), max_queue_size);
+    if (concurrencyCount > 50) {
+        concurrencyCount = 50;
+    }
+    mLogFeedbackQueue.SetParam(concurrencyCount, (size_t)(concurrencyCount * 1.5), 100);
     mThreadCount = 0;
     mInitialized = false;
 }
@@ -168,6 +170,8 @@ void LogProcess::HoldOn() {
         }
         if (allThreadWait) {
             LOG_INFO(sLogger, ("process daemon pause", "succeeded"));
+
+            KafkaAggregator::GetInstance()->ForceFlushBuffer();
             return;
         }
         usleep(10 * 1000);
