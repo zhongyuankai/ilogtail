@@ -40,9 +40,11 @@ struct LoggroupEntry {
     int32_t mLogLines;
     time_t mCreateTime;
 
-    LoggroupEntry(std::string & configName,
-                std::string & topic,
-                LogstoreFeedBackKey & logstoreKey,
+    size_t index;
+
+    LoggroupEntry(const std::string & configName,
+                const std::string & topic,
+                LogstoreFeedBackKey logstoreKey,
                 int64_t kafkaProducerKey,
                 WriteBuffer logData,
                 int32_t logLines)
@@ -113,10 +115,6 @@ public:
         const uint64_t endIndex = this->mWrite;
         for (; index < endIndex; ++index) {
             LoggroupEntry* item = this->mArray[index % this->SIZE];
-            ++this->mRead;
-            if (--this->mSize == this->LOW_SIZE && !this->mValid) {
-                this->mValid = true;
-            }
             if (item == NULL) {
                 continue;
             }
@@ -126,11 +124,6 @@ public:
 
     // with empty item
     bool InsertItem(LoggroupEntry* item) {
-        // mSenderInfo.SetRegion(item->mRegion);
-        // if (QueueType::ExactlyOnce == this->mType) {
-        //     return insertExactlyOnceItem(item);
-        // }
-
         if (this->IsFull()) {
             return false;
         }
@@ -140,12 +133,8 @@ public:
                 break;
             }
         }
-#ifdef LOGTAIL_DEBUG_FLAG
-        APSARA_LOG_DEBUG(sLogger,
-                         ("Insert send item",
-                          item)("size", this->mSize)("read", this->mRead)("write", this->mWrite)("index", index));
-#endif
         this->mArray[index % this->SIZE] = item;
+        item->index = index;
         if (index == this->mWrite) {
             ++this->mWrite;
         }
@@ -154,6 +143,36 @@ public:
             this->mValid = false;
         }
         return true;
+    }
+
+    int32_t RemoveItem(LoggroupEntry * item) {
+        if (this->IsEmpty()) {
+            return 0;
+        }
+
+        auto index = item->index;
+        auto dataItem = this->mArray[index % this->SIZE];
+        if (dataItem == item) {
+            delete dataItem;
+            this->mArray[index % this->SIZE] = NULL;
+        }
+        if (index == this->mWrite) {
+            LOG_ERROR(
+                sLogger,
+                ("find no sender item, configName", item->mConfigName)(
+                    "lines", item->mLogLines));
+            return 0;
+        }
+        // need to check mWrite to avoid dead while
+        while (this->mRead < this->mWrite && this->mArray[this->mRead % this->SIZE] == NULL) {
+            ++this->mRead;
+        }
+        int rst = 1;
+        if (--this->mSize == this->LOW_SIZE && !this->mValid) {
+            this->mValid = true;
+            rst = 2;
+        }
+        return rst;
     }
 
     LogstoreKafkaSenderStatistics GetSenderStatistics() {
@@ -236,13 +255,11 @@ public:
     virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
 
     virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
+        if (mSize.load() > 1000) {
+            return false;
+        }
         PTScopedLock dataLock(mLock);
         auto& singleQueue = mLogstoreSenderQueueMap[key];
-
-        // For correctness, exactly once queue should ignore mUrgentFlag.
-        // if (singleQueue.GetQueueType() == QueueType::ExactlyOnce) {
-        //     return singleQueue.IsValid();
-        // }
 
         if (mUrgentFlag) {
             return true;
@@ -253,6 +270,9 @@ public:
     bool Wait(int32_t waitMs) { return mTrigger.Wait(waitMs); }
 
     bool IsValid(const LogstoreFeedBackKey& key) {
+        if (mSize.load() > 1000) {
+            return false;
+        }
         PTScopedLock dataLock(mLock);
         SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
         return singleQueue.IsValid();
@@ -266,51 +286,12 @@ public:
                 return false;
             }
         }
+        ++mSize;
         Signal();
         return true;
     }
 
-    void CheckAndPopAllItem(std::vector<LoggroupEntry*>& itemVec,
-                            int32_t curTime,
-                            bool& singleQueueFullFlag,
-                            std::unordered_map<std::string, int>& regionConcurrencyLimits) {
-        singleQueueFullFlag = false;
-        PTScopedLock dataLock(mLock);
-        if (mLogstoreSenderQueueMap.empty()) {
-            return;
-        }
-
-        // must check index before moving iterator
-        mSenderQueueBeginIndex = mSenderQueueBeginIndex % mLogstoreSenderQueueMap.size();
-
-        // here we set sender queue begin index, let the sender order be different each time
-        LogstoreFeedBackQueueMapIterator beginIter = mLogstoreSenderQueueMap.begin();
-        std::advance(beginIter, mSenderQueueBeginIndex++);
-
-        PopItem(
-            beginIter, mLogstoreSenderQueueMap.end(), itemVec, curTime, regionConcurrencyLimits, singleQueueFullFlag);
-        PopItem(
-            mLogstoreSenderQueueMap.begin(), beginIter, itemVec, curTime, regionConcurrencyLimits, singleQueueFullFlag);
-    }
-
-    static void PopItem(LogstoreFeedBackQueueMapIterator beginIter,
-                        LogstoreFeedBackQueueMapIterator endIter,
-                        std::vector<LoggroupEntry*>& itemVec,
-                        int32_t curTime,
-                        std::unordered_map<std::string, int>& regionConcurrencyLimits,
-                        bool& singleQueueFullFlag) {
-        for (LogstoreFeedBackQueueMapIterator iter = beginIter; iter != endIter; ++iter) {
-            SingleLogStoreManager& singleQueue = iter->second;
-            if (!singleQueue.IsValidToSend(curTime)) {
-                continue;
-            }
-            singleQueue.GetAllIdleLoggroupWithLimit(itemVec, curTime, regionConcurrencyLimits);
-            singleQueueFullFlag |= !singleQueue.IsValid();
-        }
-    }
-
-    void PopAllItem(std::vector<LoggroupEntry*>& itemVec, int32_t curTime, bool& singleQueueFullFlag) {
-        singleQueueFullFlag = false;
+    void PopAllItem(std::vector<LoggroupEntry*> & itemVec) {
         PTScopedLock dataLock(mLock);
         for (LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.begin();
              iter != mLogstoreSenderQueueMap.end();
@@ -319,37 +300,35 @@ public:
         }
     }
 
-    bool IsEmpty() {
-        PTScopedLock dataLock(mLock);
-        for (LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.begin();
-             iter != mLogstoreSenderQueueMap.end();
-             ++iter) {
-            if (!iter->second.IsEmpty()) {
-                return false;
-            }
+    void RemoveItem(LoggroupEntry * item) {
+        if (item == NULL) {
+            return;
         }
-        return true;
+
+        LogstoreFeedBackKey key = item->mLogstoreKey;
+        int rst = 0;
+        {
+            PTScopedLock dataLock(mLock);
+            SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
+            rst = singleQueue.RemoveItem(item);
+        }
+        if (rst == 2 && mFeedBackObj != NULL) {
+            APSARA_LOG_DEBUG(sLogger, ("OnLoggroupSendDone feedback", ""));
+            mFeedBackObj->FeedBack(key);
+        }
+        if (rst > 0) {
+            --mSize;
+        }
+    }
+
+    bool IsEmpty() {
+        return mSize.load() == 0;
     }
 
     bool IsEmpty(const LogstoreFeedBackKey& key) {
         PTScopedLock dataLock(mLock);
         auto iter = mLogstoreSenderQueueMap.find(key);
         return iter == mLogstoreSenderQueueMap.end() || iter->second.IsEmpty();
-    }
-
-    void Delete(const LogstoreFeedBackKey& key) {
-        PTScopedLock dataLock(mLock);
-        auto iter = mLogstoreSenderQueueMap.find(key);
-        if (iter != mLogstoreSenderQueueMap.end()) {
-            mLogstoreSenderQueueMap.erase(iter);
-        }
-    }
-
-    // do not clear real data, just for unit test
-    void RemoveAll() {
-        PTScopedLock dataLock(mLock);
-        mLogstoreSenderQueueMap.clear();
-        mSenderQueueBeginIndex = 0;
     }
 
     void Lock() { mLock.lock(); }
@@ -385,14 +364,7 @@ public:
     }
 
     size_t GetSize() {
-        PTScopedLock dataLock(mLock);
-        size_t queueSize = 0;
-        for (LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.begin();
-             iter != mLogstoreSenderQueueMap.end();
-             ++iter) {
-            queueSize += iter->second.GetSize();
-        }
-        return queueSize;
+        return mSize.load();
     }
 
 protected:
@@ -402,6 +374,8 @@ protected:
     LogstoreFeedBackInterface* mFeedBackObj;
     bool mUrgentFlag;
     size_t mSenderQueueBeginIndex;
+
+    std::atomic_int mSize;
 };
 
 } // namespace logtail

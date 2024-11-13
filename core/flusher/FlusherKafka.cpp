@@ -49,14 +49,15 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
     }
 
     if (!KafkaSender::Instance()->CreateKafkaProducer(brokers, username, password)) {
+        LOG_ERROR(mContext->GetLogger(), ("failed to create kafka producer, configName", mContext->GetConfigName()));
         return false;
     }
 
     std::string key = brokers + "_" + username + "_" + password;
     kafkaProducerKey = HashString(key);
 
-    logstoreKey = mContext->GetLogstoreKey();
     configName = mContext->GetConfigName();
+    logstoreKey = GenerateLogstoreFeedBackKey(configName, "");
 
     if (!GetMandatoryStringParam(config, "Topic", topic, errorMsg)) {
         PARAM_ERROR_RETURN(mContext->GetLogger(),
@@ -156,10 +157,7 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
                            mContext->GetLogstoreName(),
                            mContext->GetRegion());
     }
-
-    KafkaAggregator * aggregator = KafkaAggregator::GetInstance();
-    aggregator->RegisterFlusher(this);
-
+    KafkaAggregator::GetInstance()->RegisterFlusher(this);
     return true;
 }
 
@@ -168,6 +166,7 @@ bool FlusherKafka::Start() {
 }
 
 bool FlusherKafka::Stop(bool isPipelineRemoving) {
+    KafkaAggregator::GetInstance()->RemoveFlusher(this);
     return true;
 }
 

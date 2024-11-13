@@ -22,6 +22,7 @@
 #include "common/Flags.h"
 #include "common/ParamExtractor.h"
 #include "flusher/FlusherSLS.h"
+#include "flusher/FlusherKafka.h"
 #include "go_pipeline/LogtailPlugin.h"
 #include "plugin/PluginRegistry.h"
 #include "processor/ProcessorParseApsaraNative.h"
@@ -200,6 +201,8 @@ bool Pipeline::Init(Config&& config) {
             }
             if (name == FlusherSLS::sName) {
                 mContext.SetSLSInfo(static_cast<const FlusherSLS*>(mFlushers[0]->GetPlugin()));
+            } else if (name == FlusherKafka::sName) {
+                mContext.SetFlusherKafka(static_cast<const FlusherKafka*>(mFlushers[0]->GetPlugin()));
             }
         } else {
             if (ShouldAddPluginToGoPipelineWithInput()) {

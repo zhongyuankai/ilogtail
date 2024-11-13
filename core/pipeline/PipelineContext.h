@@ -32,6 +32,7 @@ namespace logtail {
 
 class Pipeline;
 class FlusherSLS;
+class FlusherKafka;
 
 // for compatiblity with shennong profile
 struct ProcessProfile {
@@ -80,6 +81,8 @@ public:
     bool IsFirstProcessorApsara() const { return mIsFirstProcessorApsara; }
     void SetIsFirstProcessorApsaraFlag(bool flag) { mIsFirstProcessorApsara = flag; }
 
+    void SetFlusherKafka(const FlusherKafka * flusherKafka) { mFlusherKafka = flusherKafka; }
+
     ProcessProfile& GetProcessProfile() const { return mProcessProfile; }
     // LogFileProfiler& GetProfiler() { return *mProfiler; }
     const Logger::logger& GetLogger() const { return mLogger; }
@@ -96,6 +99,8 @@ private:
     const FlusherSLS* mSLSInfo = nullptr;
     bool mRequiringJsonReader = false;
     bool mIsFirstProcessorApsara = false;
+
+    const FlusherKafka * mFlusherKafka = nullptr;
 
     mutable ProcessProfile mProcessProfile;
     // LogFileProfiler* mProfiler = LogFileProfiler::GetInstance();
