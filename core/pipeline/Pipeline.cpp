@@ -115,15 +115,25 @@ bool Pipeline::Init(Config&& config) {
         } else if (inputFile->mMultiline.IsMultiline()) {
             processor = PluginRegistry::GetInstance()->CreateProcessor(ProcessorSplitMultilineLogStringNative::sName,
                                                                        to_string(++pluginIndex));
-            detail["Mode"] = Json::Value("custom");
-            detail["StartPattern"] = Json::Value(inputFile->mMultiline.mStartPattern);
-            detail["ContinuePattern"] = Json::Value(inputFile->mMultiline.mContinuePattern);
-            detail["EndPattern"] = Json::Value(inputFile->mMultiline.mEndPattern);
+            auto & multiline = inputFile->mMultiline;
+            if (multiline.mMode == MultilineOptions::Mode::CUSTOM) {
+                detail["Mode"] = Json::Value("custom");
+                detail["StartPattern"] = Json::Value(multiline.mStartPattern);
+                detail["ContinuePattern"] = Json::Value(multiline.mContinuePattern);
+                detail["EndPattern"] = Json::Value(multiline.mEndPattern);
+            } else if (multiline.mMode == MultilineOptions::Mode::TIME_RULE) {
+                detail["Mode"] = Json::Value("TimeRule");
+                detail["StartFlagIndex"] = Json::Value(multiline.mStartFlagIndex);
+                detail["StartFlag"] = Json::Value(multiline.mStartFlag);
+                detail["TimeStringLength"] = Json::Value(multiline.mTimeStringLength);
+                detail["TimeFormat"] = Json::Value(multiline.mTimeFormat);
+            }
+
             detail["AppendingLogPositionMeta"] = Json::Value(inputFile->mFileReader.mAppendingLogPositionMeta);
-            if (inputFile->mMultiline.mUnmatchedContentTreatment
+            if (multiline.mUnmatchedContentTreatment
                 == MultilineOptions::UnmatchedContentTreatment::DISCARD) {
                 detail["UnmatchedContentTreatment"] = Json::Value("discard");
-            } else if (inputFile->mMultiline.mUnmatchedContentTreatment
+            } else if (multiline.mUnmatchedContentTreatment
                        == MultilineOptions::UnmatchedContentTreatment::SINGLE_LINE) {
                 detail["UnmatchedContentTreatment"] = Json::Value("single_line");
             }

@@ -48,6 +48,7 @@
 #include "processor/ProcessorSplitLogStringNative.h"
 #include "processor/ProcessorSplitMultilineLogStringNative.h"
 #include "processor/ProcessorTagNative.h"
+#include "flusher/FlusherKafka.h"
 #if defined(__linux__) && !defined(__ANDROID__)
 #include "processor/ProcessorSPL.h"
 #endif
@@ -266,6 +267,7 @@ void PluginRegistry::LoadStaticPlugins() {
 #endif
 
     RegisterFlusherCreator(new StaticFlusherCreator<FlusherSLS>());
+    RegisterFlusherCreator(new StaticFlusherCreator<FlusherKafka>());
 }
 
 void PluginRegistry::LoadDynamicPlugins(const set<string>& plugins) {

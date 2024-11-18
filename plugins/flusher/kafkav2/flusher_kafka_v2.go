@@ -22,8 +22,10 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"strconv"
 
 	"github.com/IBM/sarama"
+	"github.com/bytedance/sonic"
 
 	"github.com/alibaba/ilogtail/pkg/fmtstr"
 	"github.com/alibaba/ilogtail/pkg/logger"
@@ -113,6 +115,19 @@ type FlusherKafka struct {
 	flusher       FlusherFunc
 	selectFields  []string
 	recordHeaders []sarama.RecordHeader
+
+	// didi
+	Pack bool
+	/// add fields
+	HostName string
+	OriginalAppName string
+	OdinLeaf string
+	LogId int
+	AppName string
+	QueryFrom string
+	IsService int
+	DIDIENV_ODIN_SU string
+	PathId int
 }
 
 type backoffConfig struct {
@@ -204,6 +219,16 @@ func NewFlusherKafka() *FlusherKafka {
 			Protocol: converter.ProtocolCustomSingle,
 			Encoding: converter.EncodingJSON,
 		},
+		Pack: false,
+		HostName: "",
+		OriginalAppName: "",
+		OdinLeaf: "",
+		LogId: -1,
+		AppName: "",
+		QueryFrom: "",
+		IsService: -1,
+		DIDIENV_ODIN_SU: "",
+		PathId: -1,
 	}
 }
 func (k *FlusherKafka) Init(context pipeline.Context) error {
@@ -212,6 +237,10 @@ func (k *FlusherKafka) Init(context pipeline.Context) error {
 		var err = errors.New("brokers ip is nil")
 		logger.Error(k.context.GetRuntimeContext(), "FLUSHER_INIT_ALARM", "init kafka flusher fail, error", err)
 		return err
+	}
+
+	if k.Pack {
+		k.flusher = k.NormalFlushWithPack
 	}
 
 	// Set default value while not set
@@ -346,6 +375,117 @@ func (k *FlusherKafka) HashFlush(projectName string, logstoreName string, config
 				m.Key = k.hashKey
 			} else {
 				m.Key = k.hashPartitionKey(selectedValueMap, logstoreName)
+			}
+			k.producer.Input() <- m
+		}
+	}
+	return nil
+}
+
+type Event struct {
+	Content         string `json:"content"`
+	HostName        string `json:"hostName"`
+	UniqueKey       string `json:"uniqueKey"`
+	OriginalAppName string `json:"originalAppName"`
+	OdinLeaf        string `json:"odinLeaf"`
+	LogTime         int64  `json:"logTime"`
+	LogId           int    `json:"logId"`
+	AppName         string `json:"appName"`
+	QueryFrom       string `json:"queryFrom"`
+	LogName         string `json:"logName"`
+	IsService       int    `json:"isService"`
+	PathId          int    `json:"pathId"`
+	Timestamp       string `json:"timestamp"`
+	CollectTime     int64  `json:"collectTime"`
+	FileKey         string `json:"fileKey"`
+	ParentPath      string `json:"parentPath"`
+	Offset          int64  `json:"offset"`
+	DIDIENV_ODIN_SU string `json:"DIDIENV_ODIN_SU"`
+}
+
+func (k *FlusherKafka) processIntValue(value string) int {
+	intValue, err := strconv.Atoi(strings.TrimSpace(value))
+	if err == nil {
+		return intValue
+	} else {
+		return -1
+	}
+}
+
+func (k *FlusherKafka) ConvertFormat(logGroup *protocol.LogGroup) []Event {
+	var path string
+	var inode string
+	for _, tag := range logGroup.LogTags {
+		if tag.Key == "__path__" {
+			path = tag.Value
+		} else if  tag.Key == "__inode__" {
+			inode = tag.Value
+		}
+	}
+
+	// 补充目录、文件信息
+	pos := strings.LastIndex(path, "/")
+	parentPath := path[0:pos]
+	logName := path[pos+1:]
+	currTime := time.Now().Unix() * 1000
+	
+	events := make([]Event, 0, len(logGroup.Logs))
+	for _, log := range logGroup.Logs {
+		event := Event{
+			ParentPath:	parentPath,
+			LogName: logName,
+			FileKey: inode,
+			CollectTime: currTime,
+			HostName: k.HostName,
+			OriginalAppName: k.OriginalAppName,
+			OdinLeaf: k.OdinLeaf,
+			LogId: k.LogId,
+			AppName: k.AppName,
+			QueryFrom: k.QueryFrom,
+			IsService: k.IsService,
+			DIDIENV_ODIN_SU: k.DIDIENV_ODIN_SU,
+			PathId: k.PathId,
+		}
+
+		for _, content := range log.Contents {
+			switch content.Key {
+				case "content":
+					event.Content = content.Value
+				case "__file_offset__":
+					offset, err := strconv.ParseInt(content.Value, 10, 64)
+					if err == nil {
+						event.Offset = offset
+					} else {
+						event.Offset = -1
+					}
+					event.UniqueKey = inode + "_" + content.Value
+			}
+		}
+
+		/// 将解析的logTime转为毫秒时间戳
+		event.LogTime = int64(log.Time) * 1000
+		event.Timestamp = strconv.FormatInt(event.LogTime, 10)
+
+		events = append(events, event)
+	}
+
+	return events
+}
+
+func (k *FlusherKafka) NormalFlushWithPack(projectName string, logstoreName string, configName string, logGroupList []*protocol.LogGroup) error {
+	for _, logGroup := range logGroupList {
+		logger.Debug(k.context.GetRuntimeContext(), "[LogGroup] topic", logGroup.Topic, "logstore", logGroup.Category, "logcount", len(logGroup.Logs), "tags", logGroup.LogTags)
+		events := k.ConvertFormat(logGroup)
+
+		buf, err := sonic.Marshal(events)
+
+		if err != nil {
+			//TODO 异常时处理
+			logger.Error(k.context.GetRuntimeContext(), "[LogGroup] topic", logGroup.Topic, "parse logGroup error.")
+		} else {
+			m := &sarama.ProducerMessage{
+				Topic: k.Topic,
+				Value: sarama.ByteEncoder(buf),
 			}
 			k.producer.Input() <- m
 		}

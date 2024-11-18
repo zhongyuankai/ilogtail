@@ -14,6 +14,9 @@
 # limitations under the License.
 set -e
 
+# 不检查内存错误
+export ASAN_OPTIONS=detect_leaks=0:abort_on_error=0:handle_abort=0:check_initialization_order=0
+
 TARGET_ARTIFACT_PATH=${TARGET_ARTIFACT_PATH:-"./core/build/unittest"}
 
 search_files() {

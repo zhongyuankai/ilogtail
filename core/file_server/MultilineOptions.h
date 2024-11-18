@@ -28,7 +28,7 @@ namespace logtail {
 
 class MultilineOptions {
 public:
-    enum class Mode { CUSTOM, JSON };
+    enum class Mode { CUSTOM, JSON, TIME_RULE};
     enum class UnmatchedContentTreatment { DISCARD, SINGLE_LINE };
 
     bool Init(const Json::Value& config, const PipelineContext& ctx, const std::string& pluginName);
@@ -41,6 +41,13 @@ public:
     std::string mStartPattern;
     std::string mContinuePattern;
     std::string mEndPattern;
+
+    /// 基于时间格式的解析
+    int32_t mStartFlagIndex = 0;
+    std::string mStartFlag = "";
+    int32_t mTimeStringLength = 19;
+    std::string mTimeFormat = "%Y-%m-%d %H:%M:%S";
+
     UnmatchedContentTreatment mUnmatchedContentTreatment = UnmatchedContentTreatment::SINGLE_LINE;
     bool mIgnoringUnmatchWarning = false;
 

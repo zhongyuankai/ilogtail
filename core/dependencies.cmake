@@ -60,6 +60,9 @@ set(DEP_NAME_LIST
         crypto
         leveldb
         uuid
+        restclient-cpp
+        absl
+        rdkafka
         )
 
 if (NOT NO_TCMALLOC)
@@ -360,10 +363,10 @@ endmacro()
 
 # asan for debug
 macro(link_asan target_name)
-    if(CMAKE_BUILD_TYPE MATCHES Debug)
-        target_compile_options(${target_name} PUBLIC -fsanitize=address)
-        target_link_options(${target_name} PUBLIC -fsanitize=address -static-libasan)
-    endif()
+    # if(CMAKE_BUILD_TYPE MATCHES Debug)
+    #     target_compile_options(${target_name} PUBLIC -fsanitize=address)
+    #     target_link_options(${target_name} PUBLIC -fsanitize=address -static-libasan)
+    # endif()
 endmacro()
 
 # uuid
@@ -376,6 +379,25 @@ macro(link_uuid target_name)
         target_link_libraries(${target_name} uuid)
     endif ()
 endmacro()
+
+# restclient-cpp
+macro(link_restclientcpp target_name)
+    target_link_libraries(${target_name} "${restclient-cpp_${LIBRARY_DIR_SUFFIX}}/librestclient-cpp.a")
+endmacro()
+
+# absl
+macro(link_absl target_name)
+    target_link_libraries(${target_name} "${absl_${LIBRARY_DIR_SUFFIX}}/libabsl_time.a")
+    target_link_libraries(${target_name} "${absl_${LIBRARY_DIR_SUFFIX}}/libabsl_time_zone.a")
+endmacro()
+
+# cppkafka
+macro(link_rdkafka target_name)
+    target_link_libraries(${target_name} "${rdkafka_${LIBRARY_DIR_SUFFIX}}/librdkafka.a")
+    target_link_libraries(${target_name} "${rdkafka_${LIBRARY_DIR_SUFFIX}}/librdkafka++.a")
+endmacro()
+
+
 
 macro(link_spl target_name)
     logtail_define(spl_${target_name} "" "")

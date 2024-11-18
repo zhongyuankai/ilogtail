@@ -41,6 +41,7 @@
 #include "common/RandomUtil.h"
 #include "common/TimeUtil.h"
 #include "common/UUIDUtil.h"
+#include "common/LogFileUtils.h"
 #include "config_manager/ConfigManager.h"
 #include "event/BlockEventManager.h"
 #include "event_handler/LogInput.h"
@@ -1012,7 +1013,7 @@ bool LogFileReader::ReadLog(LogBuffer& logBuffer, const Event* event) {
             && event->GetInode() == mDevInode.inode) {
             // For the scenario: log rotation, the last line needs to be read by timeout, which is a normal situation.
             // So here only local warning is given, don't raise alarm.
-            LOG_WARNING(sLogger,
+            LOG_DEBUG(sLogger,
                         ("read log", "timeout")("project", GetProject())("logstore", GetLogstore())(
                             "config", GetConfigName())("log reader queue name", mHostLogPath)("log path", mRealLogPath)(
                             "file device", ToString(mDevInode.dev))("file inode", ToString(mDevInode.inode))(
@@ -2074,29 +2075,57 @@ LogFileReader::RemoveLastIncompleteLog(char* buffer, int32_t size, int32_t& roll
     rollbackLineFeedCount = 0;
     // Multiline rollback
     if (mMultilineConfig.first->IsMultiline()) {
-        std::string exception;
-        while (endPs >= 0) {
-            StringView content = GetLastLine(StringView(buffer, size), endPs);
-            if (mMultilineConfig.first->GetEndPatternReg()) {
-                // start + end, continue + end, end
-                if (BoostRegexMatch(
-                        content.data(), content.size(), *mMultilineConfig.first->GetEndPatternReg(), exception)) {
-                    // Ensure the end line is complete
-                    if (buffer[endPs] == '\n') {
-                        return endPs + 1;
+        if (mMultilineConfig.first->mMode == MultilineOptions::Mode::CUSTOM)
+        {
+            std::string exception;
+            while (endPs >= 0) {
+                StringView content = GetLastLine(StringView(buffer, size), endPs);
+                if (mMultilineConfig.first->GetEndPatternReg()) {
+                    // start + end, continue + end, end
+                    if (BoostRegexMatch(
+                            content.data(), content.size(), *mMultilineConfig.first->GetEndPatternReg(), exception)) {
+                        // Ensure the end line is complete
+                        if (buffer[endPs] == '\n') {
+                            return endPs + 1;
+                        }
+                    }
+                } else if (mMultilineConfig.first->GetStartPatternReg()
+                           && BoostRegexMatch(
+                               content.data(), content.size(), *mMultilineConfig.first->GetStartPatternReg(), exception)) {
+                    // start + continue, start
+                    ++rollbackLineFeedCount;
+                    // Keep all the buffer if rollback all
+                    return content.data() - buffer;
+                }
+                ++rollbackLineFeedCount;
+                endPs = content.data() - buffer - 1;
+            }
+
+        } else if (mMultilineConfig.first->mMode == MultilineOptions::Mode::TIME_RULE) {
+            /// 基于时间规则的多行解析
+            auto & startFlagIndex = mMultilineConfig.first->mStartFlagIndex;
+            auto & startFlag = mMultilineConfig.first->mStartFlag;
+            auto & timeStringLength = mMultilineConfig.first->mTimeStringLength;
+            auto & timeFormat = mMultilineConfig.first->mTimeFormat;
+
+            while (endPs >= 0) {
+                StringView content = GetLastLine(StringView(buffer, size), endPs); 
+                StringView timeString = getTimeStringFromLineByIndex(content.data(), content.size(), startFlag, startFlagIndex, timeStringLength);
+
+                if (!timeString.empty()) {
+                    auto timestamp = parseTime(timeString, timeFormat);
+                    if (timestamp != -1) {
+                        // start + continue, start
+                        ++rollbackLineFeedCount;
+                        // Keep all the buffer if rollback all
+                        return content.data() - buffer;
                     }
                 }
-            } else if (mMultilineConfig.first->GetStartPatternReg()
-                       && BoostRegexMatch(
-                           content.data(), content.size(), *mMultilineConfig.first->GetStartPatternReg(), exception)) {
-                // start + continue, start
                 ++rollbackLineFeedCount;
-                // Keep all the buffer if rollback all
-                return content.data() - buffer;
+                endPs = content.data() - buffer - 1;
             }
-            ++rollbackLineFeedCount;
-            endPs = content.data() - buffer - 1;
         }
+
     }
     // Single line rollback or all unmatch rollback
     rollbackLineFeedCount = 0;

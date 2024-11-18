@@ -40,6 +40,9 @@ public:
     void SetSigTermSignalFlag(bool flag) { mSigTermSignalFlag = flag; }
     bool IsExiting() { return mSigTermSignalFlag; }
 
+    void createStatusFile();
+    void removeStatusFile();
+
     std::string GetInstanceId() { return mInstanceId; }
     bool TryGetUUID();
     std::string GetUUID() {

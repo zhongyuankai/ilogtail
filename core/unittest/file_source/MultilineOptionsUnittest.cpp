@@ -46,6 +46,10 @@ void MultilineOptionsUnittest::OnSuccessfulInit() const {
     APSARA_TEST_EQUAL("", config->mStartPattern);
     APSARA_TEST_EQUAL("", config->mContinuePattern);
     APSARA_TEST_EQUAL("", config->mEndPattern);
+    APSARA_TEST_EQUAL(0, config->mStartFlagIndex);
+    APSARA_TEST_EQUAL("", config->mStartFlag);
+    APSARA_TEST_EQUAL(19, config->mTimeStringLength);
+    APSARA_TEST_EQUAL("%Y-%m-%d %H:%M:%S", config->mTimeFormat);
     APSARA_TEST_EQUAL(nullptr, config->GetStartPatternReg());
     APSARA_TEST_EQUAL(nullptr, config->GetContinuePatternReg());
     APSARA_TEST_EQUAL(nullptr, config->GetEndPatternReg());
@@ -189,6 +193,26 @@ void MultilineOptionsUnittest::OnSuccessfulInit() const {
     APSARA_TEST_EQUAL(nullptr, config->GetContinuePatternReg());
     APSARA_TEST_EQUAL(nullptr, config->GetEndPatternReg());
     APSARA_TEST_FALSE(config->IsMultiline());
+
+    /// TimeRule
+    configStr = R"(
+        {
+            "Mode": "TimeRule",
+            "StartFlagIndex": 2,
+            "StartFlag": "][",
+            "TimeStringLength": 19,
+            "TimeFormat": "yyyy-MM-dd HH:mm:ss"
+        }
+    )";
+    APSARA_TEST_TRUE(ParseJsonTable(configStr, configJson, errorMsg));
+    config.reset(new MultilineOptions());
+    APSARA_TEST_TRUE(config->Init(configJson, ctx, pluginName));
+    APSARA_TEST_EQUAL(MultilineOptions::Mode::TIME_RULE, config->mMode);
+    APSARA_TEST_EQUAL(2, config->mStartFlagIndex);
+    APSARA_TEST_EQUAL("][", config->mStartFlag);
+    APSARA_TEST_EQUAL(19, config->mTimeStringLength);
+    APSARA_TEST_EQUAL("yyyy-MM-dd HH:mm:ss", config->mTimeFormat);
+
 
     // UnmatchedContentTreatment
     configStr = R"(

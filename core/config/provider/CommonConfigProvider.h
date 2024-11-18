@@ -25,8 +25,17 @@
 
 #include "config/provider/ConfigProvider.h"
 #include "config_server_pb/agent.pb.h"
+#include "models/StringView.h"
 
 namespace logtail {
+
+struct StringViewHash {
+    std::size_t operator()(const StringView & sv) const {
+        return boost::hash_range(sv.begin(), sv.end());
+    }
+};
+
+using StringViewHashMap = std::unordered_map<StringView, StringView, StringViewHash>;
 
 class CommonConfigProvider : public ConfigProvider {
 public:
@@ -69,6 +78,13 @@ private:
     void
     UpdateRemoteConfig(const google::protobuf::RepeatedPtrField<configserver::proto::ConfigCheckResult>& checkResults,
                        const google::protobuf::RepeatedPtrField<configserver::proto::ConfigDetail>& configDetails);
+
+    /// swan config update
+    void GetSwanConfigUpdate();
+    std::unordered_map<std::string, std::string> getLocalConfigs();
+    void processConfigChange(StringViewHashMap & addedConfigs,
+                             StringViewHashMap & updateConfigs,
+                             StringViewHashMap & deleteConfigs);
 
     std::vector<ConfigServerAddress> mConfigServerAddresses;
     int mConfigServerAddressId = 0;

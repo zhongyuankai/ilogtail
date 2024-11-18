@@ -44,7 +44,7 @@
 #include "pipeline/PipelineManager.h"
 #include "plugin/PluginRegistry.h"
 #include "processor/daemon/LogProcess.h"
-#include "sender/Sender.h"
+#include "flusher/KafkaSender.h"
 #ifdef __ENTERPRISE__
 #include "config/provider/EnterpriseConfigProvider.h"
 #include "config/provider/LegacyConfigProvider.h"
@@ -54,6 +54,7 @@
 #endif
 #else
 #include "config/provider/CommonConfigProvider.h"
+#include "config/provider/SwanConfigProvider.h"
 #endif
 
 DEFINE_FLAG_BOOL(ilogtail_disable_core, "disable core in worker process", true);
@@ -63,7 +64,7 @@ DEFINE_FLAG_INT32(file_tags_update_interval, "second", 1);
 DEFINE_FLAG_INT32(config_scan_interval, "seconds", 10);
 DEFINE_FLAG_INT32(profiling_check_interval, "seconds", 60);
 DEFINE_FLAG_INT32(tcmalloc_release_memory_interval, "force release memory held by tcmalloc, seconds", 300);
-DEFINE_FLAG_INT32(exit_flushout_duration, "exit process flushout duration", 20 * 1000);
+DEFINE_FLAG_INT32(exit_flushout_duration, "exit process flushout duration", 30 * 1000);
 
 DECLARE_FLAG_BOOL(send_prefer_real_ip);
 DECLARE_FLAG_BOOL(global_network_success);
@@ -181,6 +182,25 @@ void Application::Init() {
     LOG_INFO(sLogger, ("app info", appInfo));
 }
 
+void Application::createStatusFile() {
+    std::string content = "start_time: ";
+    content.append(GetTimeStamp(time(NULL), "%Y-%m-%d %H:%M:%S"));
+    content.append("\npid: ").append(std::to_string(getpid()));
+    content.append("\nversion: ").append("2.0.7");
+
+    OverwriteFile(GetProcessExecutionDir() + "status", content);
+}
+
+void Application::removeStatusFile() {
+    filesystem::path path = filesystem::path(GetProcessExecutionDir()) / "status";
+    try {
+        if (filesystem::exists(path)) {
+            filesystem::remove(path);
+        }
+    } catch (...) {
+    }
+}
+
 void Application::Start() {
     LogtailMonitor::GetInstance()->UpdateConstMetric("start_time", GetTimeStamp(time(NULL), "%Y-%m-%d %H:%M:%S"));
 
@@ -188,7 +208,7 @@ void Application::Start() {
     InitWindowsSignalObject();
 #endif
     // flusher_sls should always be loaded, since profiling will rely on this.
-    Sender::Instance()->Init();
+    // Sender::Instance()->Init();
 
     // add local config dir
     filesystem::path localConfigPath
@@ -206,10 +226,11 @@ void Application::Start() {
     EnterpriseConfigProvider::GetInstance()->Init("enterprise");
     LegacyConfigProvider::GetInstance()->Init("legacy");
 #else
+    SwanConfigProvider::GetInstance()->Init();
     CommonConfigProvider::GetInstance()->Init("common");
 #endif
 
-    LogtailAlarm::GetInstance()->Init();
+    // LogtailAlarm::GetInstance()->Init();
     LogtailMonitor::GetInstance()->Init();
 
     PluginRegistry::GetInstance()->LoadPlugins();
@@ -222,18 +243,20 @@ void Application::Start() {
 
     // If in purage container mode, it means iLogtail is deployed as Daemonset, so plugin base should be loaded since
     // liveness probe relies on it.
-    if (AppConfig::GetInstance()->IsPurageContainerMode()) {
-        LogtailPlugin::GetInstance()->LoadPluginBase();
-    }
+    // if (AppConfig::GetInstance()->IsPurageContainerMode()) {
+        // LogtailPlugin::GetInstance()->LoadPluginBase();
+    // }
     // Actually, docker env config will not work if not in purage container mode, so there is no need to load plugin
     // base if not in purage container mode. However, we still load it here for backward compatability.
-    const char* dockerEnvConfig = getenv("ALICLOUD_LOG_DOCKER_ENV_CONFIG");
-    if (dockerEnvConfig != NULL && strlen(dockerEnvConfig) > 0
-        && (dockerEnvConfig[0] == 't' || dockerEnvConfig[0] == 'T')) {
-        LogtailPlugin::GetInstance()->LoadPluginBase();
-    }
+    // const char* dockerEnvConfig = getenv("ALICLOUD_LOG_DOCKER_ENV_CONFIG");
+    // if (dockerEnvConfig != NULL && strlen(dockerEnvConfig) > 0
+        // && (dockerEnvConfig[0] == 't' || dockerEnvConfig[0] == 'T')) {
+        // LogtailPlugin::GetInstance()->LoadPluginBase();
+    // }
 
     LogProcess::GetInstance()->Start();
+
+    createStatusFile();
 
     time_t curTime = 0, lastProfilingCheckTime = 0, lastTcmallocReleaseMemTime = 0, lastConfigCheckTime = 0,
            lastUpdateMetricTime = 0, lastCheckTagsTime = 0;
@@ -310,6 +333,8 @@ void Application::Exit() {
     }
 #endif
 
+    KafkaSender::Instance()->SetQueueUrgent();
+
     PipelineManager::GetInstance()->StopAllPipelines();
 
     PluginRegistry::GetInstance()->UnloadPlugins();
@@ -322,15 +347,16 @@ void Application::Exit() {
 #endif
 
     LogtailMonitor::GetInstance()->Stop();
-    LogtailAlarm::GetInstance()->Stop();
+    // LogtailAlarm::GetInstance()->Stop();
     // from now on, alarm should not be used.
 
-    if (!(Sender::Instance()->FlushOut(INT32_FLAG(exit_flushout_duration)))) {
+    if (!(KafkaSender::Instance()->FlushOut(INT32_FLAG(exit_flushout_duration)))) {
         LOG_WARNING(sLogger, ("flush SLS sender data", "failed"));
     } else {
         LOG_INFO(sLogger, ("flush SLS sender data", "succeeded"));
     }
 
+    removeStatusFile();
 
 #if defined(_MSC_VER)
     ReleaseWindowsSignalObject();
@@ -354,37 +380,37 @@ void Application::CheckCriticalCondition(int32_t curTime) {
 #endif
     // if network is fail in 2 hours, force exit (for ant only)
     // work around for no network when docker start
-    if (BOOL_FLAG(send_prefer_real_ip) && !BOOL_FLAG(global_network_success) && curTime - mStartTime > 7200) {
-        LOG_ERROR(sLogger, ("network is fail", "prepare force exit"));
-        LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
-                                               "network is fail since " + ToString(mStartTime) + " force exit");
-        LogtailAlarm::GetInstance()->ForceToSend();
-        sleep(10);
-        _exit(1);
-    }
+    // if (BOOL_FLAG(send_prefer_real_ip) && !BOOL_FLAG(global_network_success) && curTime - mStartTime > 7200) {
+    //     LOG_ERROR(sLogger, ("network is fail", "prepare force exit"));
+    //     LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
+    //                                            "network is fail since " + ToString(mStartTime) + " force exit");
+    //     LogtailAlarm::GetInstance()->ForceToSend();
+    //     sleep(10);
+    //     _exit(1);
+    // }
 
-    int32_t lastDaemonRunTime = Sender::Instance()->GetLastDeamonRunTime();
-    if (lastDaemonRunTime > 0 && curTime - lastDaemonRunTime > 3600) {
-        LOG_ERROR(sLogger, ("last sender daemon run time is too old", lastDaemonRunTime)("prepare force exit", ""));
-        LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
-                                               "last sender daemon run time is too old: " + ToString(lastDaemonRunTime)
-                                                   + " force exit");
-        LogtailAlarm::GetInstance()->ForceToSend();
-        sleep(10);
-        _exit(1);
-    }
+    // int32_t lastDaemonRunTime = Sender::Instance()->GetLastDeamonRunTime();
+    // if (lastDaemonRunTime > 0 && curTime - lastDaemonRunTime > 3600) {
+    //     LOG_ERROR(sLogger, ("last sender daemon run time is too old", lastDaemonRunTime)("prepare force exit", ""));
+    //     LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
+    //                                            "last sender daemon run time is too old: " + ToString(lastDaemonRunTime)
+    //                                                + " force exit");
+    //     LogtailAlarm::GetInstance()->ForceToSend();
+    //     sleep(10);
+    //     _exit(1);
+    // }
 
-    int32_t lastSendTime = Sender::Instance()->GetLastSendTime();
-    if (lastSendTime > 0 && curTime - lastSendTime > 3600 * 12) {
-        LOG_ERROR(sLogger, ("last send time is too old", lastSendTime)("prepare force exit", ""));
-        LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
-                                               "last send time is too old: " + ToString(lastSendTime) + " force exit");
-        LogtailAlarm::GetInstance()->ForceToSend();
-        sleep(10);
-        _exit(1);
-    }
+    // int32_t lastSendTime = Sender::Instance()->GetLastSendTime();
+    // if (lastSendTime > 0 && curTime - lastSendTime > 3600 * 12) {
+    //     LOG_ERROR(sLogger, ("last send time is too old", lastSendTime)("prepare force exit", ""));
+    //     LogtailAlarm::GetInstance()->SendAlarm(LOGTAIL_CRASH_ALARM,
+    //                                            "last send time is too old: " + ToString(lastSendTime) + " force exit");
+    //     LogtailAlarm::GetInstance()->ForceToSend();
+    //     sleep(10);
+    //     _exit(1);
+    // }
 
-    LogtailMonitor::GetInstance()->UpdateMetric("last_send_time", GetTimeStamp(lastSendTime, "%Y-%m-%d %H:%M:%S"));
+    // LogtailMonitor::GetInstance()->UpdateMetric("last_send_time", GetTimeStamp(lastSendTime, "%Y-%m-%d %H:%M:%S"));
 }
 
 bool Application::GetUUIDThread() {

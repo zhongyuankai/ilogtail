@@ -467,7 +467,7 @@ public:
     }
 
     void
-    GetStatus(int32_t& normalInvalidCount, int32_t& normalTotalCount, int32_t& eoInvalidCount, int32_t& eoTotalCount) {
+    GetStatus(int32_t& normalInvalidCount, int32_t& normalTotalCount, int32_t& eoInvalidCount, int32_t& eoTotalCount, int32_t& queueSize) {
         PTScopedLock dataLock(mLock);
         for (LogstoreFeedBackQueueMapIterator iter = mLogstoreQueueMap.begin(); iter != mLogstoreQueueMap.end();
              ++iter) {
@@ -479,6 +479,7 @@ public:
             if (!iter->second.IsValid()) {
                 ++invalid;
             }
+            queueSize += iter->second.GetSize();
         }
     }
 

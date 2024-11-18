@@ -144,6 +144,9 @@ bool LogFileProfiler::GetProfileData(LogGroup& logGroup, LogStoreStatistic* stat
     contentPtr = logPtr->add_contents();
     contentPtr->set_key("read_avg_delay");
     contentPtr->set_value(ToString(statistic->mReadCount == 0 ? 0 : statistic->mReadDelaySum / statistic->mReadCount));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("max_collect_delay");
+    contentPtr->set_value(ToString(statistic->mMaxCollectDelay));
 
     if (!statistic->mTags.empty()) {
         const std::vector<sls_logs::LogTag>& extraTags = statistic->mTags;
@@ -278,6 +281,7 @@ void LogFileProfiler::AddProfilingData(const std::string& configName,
                                        uint64_t readBytes,
                                        uint64_t skipBytes,
                                        uint64_t splitLines,
+                                       uint64_t maxCollectDelay,
                                        uint64_t parseFailures,
                                        uint64_t regexMatchFailures,
                                        uint64_t parseTimeFailures,
@@ -296,6 +300,7 @@ void LogFileProfiler::AddProfilingData(const std::string& configName,
                          readBytes,
                          skipBytes,
                          splitLines,
+                         maxCollectDelay,
                          parseFailures,
                          regexMatchFailures,
                          parseTimeFailures,
@@ -311,6 +316,7 @@ void LogFileProfiler::AddProfilingData(const std::string& configName,
         (iter->second)->mReadBytes += readBytes;
         (iter->second)->mSkipBytes += skipBytes;
         (iter->second)->mSplitLines += splitLines;
+        (iter->second)->mMaxCollectDelay = maxCollectDelay;
         (iter->second)->mParseFailures += parseFailures;
         (iter->second)->mRegexMatchFailures += regexMatchFailures;
         (iter->second)->mParseTimeFailures += parseTimeFailures;
@@ -332,6 +338,7 @@ void LogFileProfiler::AddProfilingData(const std::string& configName,
                                                 readBytes,
                                                 skipBytes,
                                                 splitLines,
+                                                maxCollectDelay,
                                                 parseFailures,
                                                 regexMatchFailures,
                                                 parseTimeFailures,
@@ -348,6 +355,7 @@ void LogFileProfiler::AddProfilingData(const std::string& configName,
                                                 readBytes,
                                                 skipBytes,
                                                 splitLines,
+                                                maxCollectDelay,
                                                 parseFailures,
                                                 regexMatchFailures,
                                                 parseTimeFailures,
@@ -522,6 +530,8 @@ void LogFileProfiler::UpdateDumpData(const sls_logs::LogGroup& logGroup, Json::V
                 category["sender_valid_flag"] = value;
             else if (key == "send_block_flag")
                 category["send_block_flag"] = value;
+            else if (key == "max_collect_delay")
+                category["max_collect_delay"] = value;
         }
         if (logstoreFlag) {
             logstore.append(category);
