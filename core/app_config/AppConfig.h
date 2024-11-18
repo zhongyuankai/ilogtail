@@ -78,6 +78,7 @@ private:
     int32_t mNumOfBufferFile;
     int32_t mLocalFileSize;
     int32_t mSendRequestConcurrency;
+    int32_t mSendMaxQueueSize;
     std::string mBufferFilePath;
 
     // checkpoint
@@ -322,6 +323,8 @@ public:
     const std::string& GetBufferFilePath() const { return mBufferFilePath; }
 
     int32_t GetSendRequestConcurrency() const { return mSendRequestConcurrency; }
+
+    int32_t GetSendMaxQueueSize() const { return mSendMaxQueueSize; }
 
     int32_t GetProcessThreadCount() const { return mProcessThreadCount; }
 

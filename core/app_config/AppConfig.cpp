@@ -46,6 +46,7 @@ DEFINE_FLAG_INT32(default_local_file_size, "default size of one buffer file", 20
 DEFINE_FLAG_INT32(pub_local_file_size, "default size of one buffer file", 20 * 1024 * 1024);
 DEFINE_FLAG_INT32(process_thread_count, "", 1);
 DEFINE_FLAG_INT32(send_request_concurrency, "max count keep in mem when async send", 10);
+DEFINE_FLAG_INT32(send_max_queue_size, "send queue max size", 600);
 DEFINE_FLAG_BOOL(enable_send_tps_smoothing, "avoid web server load burst", true);
 DEFINE_FLAG_BOOL(enable_flow_control, "if enable flow control", true);
 DEFINE_FLAG_STRING(default_buffer_file_path, "set current execution dir in default", "");
@@ -166,6 +167,7 @@ AppConfig::AppConfig() {
     // mIsOldPubRegion = false;
     // mOpenStreamLog = false;
     mSendRequestConcurrency = INT32_FLAG(send_request_concurrency);
+    mSendMaxQueueSize = INT32_FLAG(send_max_queue_size);
     mProcessThreadCount = INT32_FLAG(process_thread_count);
     // mMappingConfigPath = STRING_FLAG(default_mapping_config_path);
     mMachineCpuUsageThreshold = DOUBLE_FLAG(default_machine_cpu_usage_threshold);
@@ -451,6 +453,12 @@ void AppConfig::LoadResourceConf(const Json::Value& confJson) {
     else
         mSendRequestConcurrency = INT32_FLAG(send_request_concurrency);
     LogtailMonitor::GetInstance()->UpdateConstMetric("send_request_concurrency", mSendRequestConcurrency);
+
+    if (confJson.isMember("send_max_queue_size") && confJson["send_max_queue_size"].isInt())
+        mSendMaxQueueSize = confJson["send_max_queue_size"].asInt();
+    else
+        mSendMaxQueueSize = INT32_FLAG(send_max_queue_size);
+    LogtailMonitor::GetInstance()->UpdateConstMetric("send_max_queue_size", mSendMaxQueueSize);
 
     if (confJson.isMember("process_thread_count") && confJson["process_thread_count"].isInt())
         mProcessThreadCount = confJson["process_thread_count"].asInt();

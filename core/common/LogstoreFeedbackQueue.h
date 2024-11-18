@@ -230,6 +230,10 @@ public:
         pParam->SetMaxSize(maxSize);
     }
 
+    void SetMaxQueueSize(const size_t maxQueueSize) {
+        mMaxQueueSize = maxQueueSize;
+    }
+
     void SetFeedBackObject(LogstoreFeedBackInterface* pFeedbackObj) {
         PTScopedLock dataLock(mLock);
         mFeedBackObj = pFeedbackObj;
@@ -241,6 +245,9 @@ public:
 
     bool IsValid(const LogstoreFeedBackKey& key) {
         PTScopedLock dataLock(mLock);
+        if (mQueueSize > mMaxQueueSize) {
+            return false;
+        }
         SingleLogStoreQueue& singleQueue = mLogstoreQueueMap[key];
         return singleQueue.IsValid();
     }
@@ -253,6 +260,7 @@ public:
             if (!singleQueue.PushItem(item)) {
                 return false;
             }
+            ++mQueueSize;
         }
         mTrigger.Trigger();
         return true;
@@ -271,6 +279,7 @@ public:
                 if (rst == 2 && mFeedBackObj != NULL) {
                     mFeedBackObj->FeedBack(iter->mKey);
                 }
+                --mQueueSize;
                 return true;
             }
         }
@@ -285,6 +294,7 @@ public:
             if (rst == 2 && mFeedBackObj != NULL) {
                 mFeedBackObj->FeedBack(startKey);
             }
+            --mQueueSize;
             return true;
         }
         for (LogstoreFeedBackQueueMapIterator iter = mLogstoreQueueMap.begin(); iter != startKeyIter; ++iter) {
@@ -296,6 +306,7 @@ public:
             if (rst == 2 && mFeedBackObj != NULL) {
                 mFeedBackObj->FeedBack(startKey);
             }
+            --mQueueSize;
             return true;
         }
         return false;
@@ -320,6 +331,7 @@ public:
                 if (rst == 2 && mFeedBackObj != NULL) {
                     mFeedBackObj->FeedBack(iter->mKey);
                 }
+                --mQueueSize;
                 return true;
             }
         }
@@ -336,6 +348,7 @@ public:
             if (rst == 2 && mFeedBackObj != NULL) {
                 mFeedBackObj->FeedBack(startKey);
             }
+            --mQueueSize;
             return true;
         }
         for (LogstoreFeedBackQueueMapIterator iter = mLogstoreQueueMap.begin(); iter != startKeyIter; ++iter) {
@@ -350,6 +363,7 @@ public:
             if (rst == 2 && mFeedBackObj != NULL) {
                 mFeedBackObj->FeedBack(startKey);
             }
+            --mQueueSize;
             return true;
         }
         return false;
@@ -387,6 +401,7 @@ public:
                     if (rst == 2 && mFeedBackObj != NULL) {
                         mFeedBackObj->FeedBack(iter->mKey);
                     }
+                    --mQueueSize;
                     return true;
                 }
             }
@@ -410,6 +425,7 @@ public:
                     continue;
                 }
                 startKey = iter->first;
+                --mQueueSize;
                 break;
             }
             if (rst != 0) {
@@ -427,6 +443,7 @@ public:
                     continue;
                 }
                 startKey = iter->first;
+                --mQueueSize;
                 break;
             }
         } while (false);
@@ -439,13 +456,7 @@ public:
 
     bool IsEmpty() {
         PTScopedLock dataLock(mLock);
-        for (LogstoreFeedBackQueueMapIterator iter = mLogstoreQueueMap.begin(); iter != mLogstoreQueueMap.end();
-             ++iter) {
-            if (!iter->second.IsEmpty()) {
-                return false;
-            }
-        }
-        return true;
+        return mQueueSize == 0;
     }
 
     bool IsEmpty(const LogstoreFeedBackKey& key) {
@@ -462,6 +473,9 @@ public:
 
     virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
         PTScopedLock dataLock(mLock);
+        if (mQueueSize > mMaxQueueSize) {
+            return false;
+        }
         auto& singleQueue = mLogstoreQueueMap[key];
         return singleQueue.IsValid();
     }
@@ -487,6 +501,7 @@ public:
         PTScopedLock dataLock(mLock);
         auto iter = mLogstoreQueueMap.find(key);
         if (iter != mLogstoreQueueMap.end()) {
+            mQueueSize -= iter->second.GetSize();
             mLogstoreQueueMap.erase(iter);
         }
     }
@@ -535,6 +550,9 @@ protected:
     LogstoreFeedBackInterface* mFeedBackObj;
     LogstoreFeedBackQueueMap mLogstoreQueueMap;
     LogstoreFeedBackQueueVector mPriorityQueueArray[MAX_CONFIG_PRIORITY_LEVEL];
+
+    size_t mQueueSize = 0;
+    size_t mMaxQueueSize;
 
 private:
     bool CanPopItem(int32_t threadNo,

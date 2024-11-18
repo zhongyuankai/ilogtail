@@ -245,6 +245,10 @@ public:
         pParam->SetMaxSize(maxSize);
     }
 
+    void SetMaxQueueSize(const size_t maxQueueSize) {
+        mMaxQueueSize = maxQueueSize;
+    }
+
     void SetFeedBackObject(LogstoreFeedBackInterface* pFeedbackObj) {
         PTScopedLock dataLock(mLock);
         mFeedBackObj = pFeedbackObj;
@@ -255,10 +259,10 @@ public:
     virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
 
     virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
-        if (mSize.load() > 1000) {
+        PTScopedLock dataLock(mLock);
+        if (mQueueSize > mMaxQueueSize) {
             return false;
         }
-        PTScopedLock dataLock(mLock);
         auto& singleQueue = mLogstoreSenderQueueMap[key];
 
         if (mUrgentFlag) {
@@ -270,10 +274,10 @@ public:
     bool Wait(int32_t waitMs) { return mTrigger.Wait(waitMs); }
 
     bool IsValid(const LogstoreFeedBackKey& key) {
-        if (mSize.load() > 1000) {
+        PTScopedLock dataLock(mLock);
+        if (mQueueSize > mMaxQueueSize) {
             return false;
         }
-        PTScopedLock dataLock(mLock);
         SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
         return singleQueue.IsValid();
     }
@@ -285,8 +289,8 @@ public:
             if (!singleQueue.InsertItem(item)) {
                 return false;
             }
+            ++mQueueSize;
         }
-        ++mSize;
         Signal();
         return true;
     }
@@ -311,18 +315,19 @@ public:
             PTScopedLock dataLock(mLock);
             SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
             rst = singleQueue.RemoveItem(item);
+            if (rst != 0) {
+                --mQueueSize;
+            }
         }
         if (rst == 2 && mFeedBackObj != NULL) {
             APSARA_LOG_DEBUG(sLogger, ("OnLoggroupSendDone feedback", ""));
             mFeedBackObj->FeedBack(key);
         }
-        if (rst > 0) {
-            --mSize;
-        }
     }
 
     bool IsEmpty() {
-        return mSize.load() == 0;
+        PTScopedLock dataLock(mLock);
+        return mQueueSize == 0;
     }
 
     bool IsEmpty(const LogstoreFeedBackKey& key) {
@@ -364,7 +369,8 @@ public:
     }
 
     size_t GetSize() {
-        return mSize.load();
+        PTScopedLock dataLock(mLock);
+        return mQueueSize;
     }
 
 protected:
@@ -375,7 +381,8 @@ protected:
     bool mUrgentFlag;
     size_t mSenderQueueBeginIndex;
 
-    std::atomic_int mSize;
+    size_t mQueueSize = 0;
+    size_t mMaxQueueSize;
 };
 
 } // namespace logtail

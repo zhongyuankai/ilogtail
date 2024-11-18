@@ -81,6 +81,8 @@ LogProcess::LogProcess() : mAccessProcessThreadRWL(ReadWriteLock::PREFER_WRITER)
         concurrencyCount = 50;
     }
     mLogFeedbackQueue.SetParam(concurrencyCount, (size_t)(concurrencyCount * 1.5), 100);
+    size_t maxQueueSize = (size_t)AppConfig::GetInstance()->GetSendMaxQueueSize();
+    mLogFeedbackQueue.SetMaxQueueSize(maxQueueSize);
     mThreadCount = 0;
     mInitialized = false;
 }
