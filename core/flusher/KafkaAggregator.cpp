@@ -9,7 +9,7 @@ namespace fs = std::filesystem;
 
 
 DEFINE_FLAG_INT32(max_log_group_size, "Maximum size of a message sent to Kafka.", 2 * 1024 * 1024);
-DEFINE_FLAG_INT32(batch_kafka_send_interval, "batch kafka sender interval (second)(default 20)", 15);
+DEFINE_FLAG_INT32(batch_kafka_send_interval, "batch kafka sender interval (second)(default 10)", 10);
 
 namespace logtail {
 

@@ -28,6 +28,8 @@ KafkaSender::KafkaSender() {
         concurrencyCount = 50;
     }
     mSenderQueue.SetParam((size_t)(concurrencyCount * 1.5), (size_t)(concurrencyCount * 2), 200);
+    size_t maxQueueSize = (size_t)AppConfig::GetInstance()->GetSendMaxQueueSize();
+    mSenderQueue.SetMaxQueueSize(maxQueueSize);
     LOG_INFO(sLogger, ("Set sender queue param depend value", concurrencyCount));
 
     new Thread(std::bind(&KafkaSender::DaemonSender, this)); 
