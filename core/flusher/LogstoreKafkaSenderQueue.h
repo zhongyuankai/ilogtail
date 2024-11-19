@@ -259,6 +259,9 @@ public:
     virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
 
     virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
+        if (mSize.load() > 1000) {
+            return false;
+        }
         PTScopedLock dataLock(mLock);
         if (mQueueSize > mMaxQueueSize) {
             return false;
@@ -274,6 +277,9 @@ public:
     bool Wait(int32_t waitMs) { return mTrigger.Wait(waitMs); }
 
     bool IsValid(const LogstoreFeedBackKey& key) {
+        if (mSize.load() > 1000) {
+            return false;
+        }
         PTScopedLock dataLock(mLock);
         if (mQueueSize > mMaxQueueSize) {
             return false;
@@ -291,6 +297,7 @@ public:
             }
             ++mQueueSize;
         }
+        ++mSize;
         Signal();
         return true;
     }
@@ -329,6 +336,7 @@ public:
         PTScopedLock dataLock(mLock);
         return mQueueSize == 0;
     }
+
 
     bool IsEmpty(const LogstoreFeedBackKey& key) {
         PTScopedLock dataLock(mLock);
