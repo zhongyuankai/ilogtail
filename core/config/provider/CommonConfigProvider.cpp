@@ -381,9 +381,8 @@ void CommonConfigProvider::GetSwanConfigUpdate() {
         // 处理新增、更新、删除的配置
         processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
         LOG_INFO(sLogger, ("end to convert swan config......", ""));
-        } catch (const std::exception& e) {
-            LOG_ERROR(sLogger, ("update swan config failed...", std::string(e.what())));
-        return;
+    } catch (const std::exception& e) {
+        LOG_ERROR(sLogger, ("update swan config failed...", std::string(e.what())));
     }
 }
 
