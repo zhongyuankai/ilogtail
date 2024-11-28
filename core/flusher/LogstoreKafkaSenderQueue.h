@@ -15,22 +15,6 @@ namespace logtail {
 
 using WriteBuffer = sonic_json::WriteBuffer;
 
-struct LogstoreKafkaSenderStatistics {
-    LogstoreKafkaSenderStatistics();
-    void Reset();
-
-    int32_t mMaxUnsendTime;
-    int32_t mMinUnsendTime;
-    int32_t mMaxSendSuccessTime;
-    uint32_t mSendQueueSize;
-    uint32_t mSendNetWorkErrorCount;
-    uint32_t mSendQuotaErrorCount;
-    uint32_t mSendDiscardErrorCount;
-    uint32_t mSendSuccessCount;
-    bool mSendBlockFlag;
-    bool mValidToSendFlag;
-};
-
 struct LoggroupEntry {
     std::string mConfigName;
     std::string mTopic;
@@ -58,52 +42,10 @@ struct LoggroupEntry {
     }
 };
 
-struct LogstoreKafkaSenderInfo {
-    enum SendResult {
-        SendResult_OK,
-        SendResult_Buffered, // move to file buffer
-        SendResult_NetworkFail,
-        SendResult_QuotaFail,
-        SendResult_DiscardFail,
-        SendResult_OtherFail
-    };
-
-    std::string mRegion;
-    volatile int32_t mLastNetworkErrorCount;
-    volatile int32_t mLastQuotaExceedCount;
-    volatile int32_t mLastNetworkErrorTime;
-    volatile int32_t mLastQuotaExceedTime;
-    volatile double mNetworkRetryInterval;
-    volatile double mQuotaRetryInterval;
-    volatile bool mNetworkValidFlag;
-    volatile bool mQuotaValidFlag;
-    volatile int32_t mSendConcurrency;
-    volatile int32_t mSendConcurrencyUpdateTime;
-
-    LogstoreKafkaSenderInfo();
-
-    void SetRegion(const std::string& region);
-
-    bool ConcurrencyValid();
-    void ConcurrencyDec() { --mSendConcurrency; }
-
-    bool CanSend(int32_t curTime);
-    // RecordSendResult
-    // @return true if need to trigger.
-    bool RecordSendResult(SendResult rst, LogstoreKafkaSenderStatistics& statisticsItem);
-    // return value, recover sucess flag(if logstore is invalid before, return true, else return false)
-    bool OnRegionRecover(const std::string& region);
-};
-
 template <class PARAM>
 class SingleLogstoreKafkaSenderManager : public SingleLogstoreFeedbackQueue<LoggroupEntry*, PARAM> {
 public:
-    SingleLogstoreKafkaSenderManager()
-        : mLastSendTimeSecond(0), mLastSecondTotalBytes(0), mMaxSendBytesPerSecond(-1), mFlowControlExpireTime(0) {}
-
-    void SetMaxSendBytesPerSecond(int32_t maxBytes, int32_t expireTime) {
-        mMaxSendBytesPerSecond = maxBytes;
-        mFlowControlExpireTime = expireTime;
+    SingleLogstoreKafkaSenderManager() {
     }
 
     void GetAllLoggroup(std::vector<LoggroupEntry*>& logGroupVec) {
@@ -174,57 +116,6 @@ public:
         }
         return rst;
     }
-
-    LogstoreKafkaSenderStatistics GetSenderStatistics() {
-        LogstoreKafkaSenderStatistics statisticsItem = mSenderStatistics;
-        mSenderStatistics.Reset();
-
-        statisticsItem.mSendBlockFlag = !this->IsValid();
-        statisticsItem.mValidToSendFlag = IsValidToSend(time(NULL));
-        if (this->IsEmpty()) {
-            return statisticsItem;
-        }
-
-        uint64_t index = QueueType::ExactlyOnce == this->mType ? 0 : this->mRead;
-        int32_t minSendTime = INT32_MAX;
-        int32_t maxSendTime = 0;
-        for (size_t i = 0; i < this->mSize; ++i, ++index) {
-            LoggroupEntry* item = this->mArray[index % this->SIZE];
-            if (item == NULL) {
-                continue;
-            }
-
-            // if (item->mEnqueueTime < minSendTime) {
-            //     minSendTime = item->mEnqueueTime;
-            // }
-            // if (item->mEnqueueTime > maxSendTime) {
-            //     maxSendTime = item->mEnqueueTime;
-            // }
-            ++statisticsItem.mSendQueueSize;
-        }
-        if (statisticsItem.mSendQueueSize > 0) {
-            statisticsItem.mMinUnsendTime = minSendTime;
-            statisticsItem.mMaxUnsendTime = maxSendTime;
-        }
-        return statisticsItem;
-    }
-
-    bool IsValidToSend(int32_t curTime) {
-        return mSenderInfo.CanSend(curTime);
-    }
-
-    LogstoreKafkaSenderInfo mSenderInfo;
-    LogstoreKafkaSenderStatistics mSenderStatistics;
-
-    // add for flow control
-    volatile int32_t mLastSendTimeSecond;
-    volatile int32_t mLastSecondTotalBytes;
-
-    volatile int32_t mMaxSendBytesPerSecond; // <0, no flowControl, 0 pause sending,
-    volatile int32_t mFlowControlExpireTime; // <=0 no expire
-
-    std::vector<RangeCheckpointPtr> mRangeCheckpoints;
-    std::deque<LoggroupEntry*> mExtraBuffers;
 };
 
 template <class PARAM>
@@ -235,8 +126,18 @@ protected:
     typedef typename std::unordered_map<LogstoreFeedBackKey, SingleLogStoreManager>::iterator
         LogstoreFeedBackQueueMapIterator;
 
+    struct SingleKafkaSenderQueue {
+        LogstoreFeedBackQueueMap mLogstoreSenderQueueMap;
+        PTMutex mLock;
+        TriggerEvent mTrigger;
+    };
+
+    using SingleKafkaSenderQueuePtr = std::shared_ptr<SingleKafkaSenderQueue>;
+    using MuliLevelKafkaSenderQueue = std::unordered_map<int64_t, SingleKafkaSenderQueuePtr>;
+    using LogstoreFeedBackKeyMap = std::unordered_map<LogstoreFeedBackKey, int64_t>;
+
 public:
-    LogstoreKafkaSenderQueue() : mFeedBackObj(NULL), mUrgentFlag(false), mSenderQueueBeginIndex(0) {}
+    LogstoreKafkaSenderQueue() : mFeedBackObj(NULL), mUrgentFlag(false) {}
 
     void SetParam(const size_t lowSize, const size_t highSize, const size_t maxSize) {
         PARAM* pParam = PARAM::GetInstance();
@@ -254,53 +155,78 @@ public:
         mFeedBackObj = pFeedbackObj;
     }
 
-    void Signal() { mTrigger.Trigger(); }
+    void Signal() {
+        std::vector<SingleKafkaSenderQueuePtr> queues;
+        {
+            PTScopedLock dataLock(mLock);
+            for (const auto & [k, v] : mSenderQueue) {
+                queues.push_back(v);
+            }
+        }
+        for (const auto & queue : queues) {
+            queue->mTrigger.Trigger();
+        }
+    }
 
-    virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
+    virtual void FeedBack(const LogstoreFeedBackKey& key) {
+        SingleKafkaSenderQueuePtr queue = getKafkaSenderQueue(key);
+        if (!queue) {
+            return;
+        }
+        queue->mTrigger.Trigger();
+    }
 
     virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
-        PTScopedLock dataLock(mLock);
-        if (mQueueSize > mMaxQueueSize) {
-            return false;
-        }
-        auto& singleQueue = mLogstoreSenderQueueMap[key];
+        SingleKafkaSenderQueuePtr queue = nullptr;
+        {
+            PTScopedLock dataLock(mLock);
+            if (mQueueSize.load() > mMaxQueueSize) {
+                return false;
+            }
 
-        if (mUrgentFlag) {
+            if (mUrgentFlag) {
+                return true;
+            }
+            queue = getKafkaSenderQueueUnLock(key);
+        }
+        if (!queue) {
             return true;
         }
+
+        PTScopedLock lock(queue->mLock);
+        auto& singleQueue = queue->mLogstoreSenderQueueMap[key];
         return singleQueue.IsValid();
     }
 
-    bool Wait(int32_t waitMs) { return mTrigger.Wait(waitMs); }
-
-    bool IsValid(const LogstoreFeedBackKey& key) {
-        PTScopedLock dataLock(mLock);
-        if (mQueueSize > mMaxQueueSize) {
-            return false;
-        }
-        SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
-        return singleQueue.IsValid();
+    bool Wait(int64_t kafkaProducerKey, int32_t waitMs) {
+        auto queue = getOrCreateKafkaSenderQueue(kafkaProducerKey);
+        return queue->mTrigger.Wait(waitMs);
     }
 
     bool PushItem(const LogstoreFeedBackKey& key, LoggroupEntry* const& item) {
+        auto queue = getOrCreateKafkaSenderQueue(item->mKafkaProducerKey);
+        
         {
-            PTScopedLock dataLock(mLock);
-            SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
+            PTScopedLock lock(queue->mLock);
+            SingleLogStoreManager& singleQueue = queue->mLogstoreSenderQueueMap[key];
             if (!singleQueue.InsertItem(item)) {
                 return false;
             }
-            ++mQueueSize;
         }
-        Signal();
+        ++mQueueSize;
+        queue->mTrigger.Trigger();
         return true;
     }
 
-    void PopAllItem(std::vector<LoggroupEntry*> & itemVec) {
-        PTScopedLock dataLock(mLock);
-        for (LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.begin();
-             iter != mLogstoreSenderQueueMap.end();
-             ++iter) {
-            iter->second.GetAllLoggroup(itemVec);
+    void PopItemByKafkaProducerKey(std::vector<LoggroupEntry*> & itemVec, int64_t kafkaProducerKey) {
+        auto queue = getOrCreateKafkaSenderQueue(kafkaProducerKey);
+
+        {
+            PTScopedLock lock(queue->mLock);
+            for (LogstoreFeedBackQueueMapIterator iter = queue->mLogstoreSenderQueueMap.begin();
+                iter != queue->mLogstoreSenderQueueMap.end(); ++iter) {
+                iter->second.GetAllLoggroup(itemVec);
+            }
         }
     }
 
@@ -310,78 +236,119 @@ public:
         }
 
         LogstoreFeedBackKey key = item->mLogstoreKey;
+        int64_t kafkaProducerKey = item->mKafkaProducerKey;
+        auto queue = getOrCreateKafkaSenderQueue(kafkaProducerKey);
+
         int rst = 0;
         {
-            PTScopedLock dataLock(mLock);
-            SingleLogStoreManager& singleQueue = mLogstoreSenderQueueMap[key];
+            PTScopedLock lock(queue->mLock);
+            SingleLogStoreManager& singleQueue = queue->mLogstoreSenderQueueMap[key];
             rst = singleQueue.RemoveItem(item);
-            if (rst != 0) {
-                --mQueueSize;
-            }
         }
         if (rst == 2 && mFeedBackObj != NULL) {
             APSARA_LOG_DEBUG(sLogger, ("OnLoggroupSendDone feedback", ""));
             mFeedBackObj->FeedBack(key);
         }
+        if (rst != 0) {
+            --mQueueSize;
+        }
     }
 
     bool IsEmpty() {
-        PTScopedLock dataLock(mLock);
-        return mQueueSize == 0;
+        return mQueueSize.load() == 0;
     }
 
     bool IsEmpty(const LogstoreFeedBackKey& key) {
-        PTScopedLock dataLock(mLock);
-        auto iter = mLogstoreSenderQueueMap.find(key);
-        return iter == mLogstoreSenderQueueMap.end() || iter->second.IsEmpty();
+        SingleKafkaSenderQueuePtr queue = getKafkaSenderQueue(key);
+        if (!queue) {
+            return true;
+        }
+
+        PTScopedLock lock(queue->mLock);
+        auto iter = queue->mLogstoreSenderQueueMap.find(key);
+        return iter == queue->mLogstoreSenderQueueMap.end() || iter->second.IsEmpty();
     }
-
-    void Lock() { mLock.lock(); }
-
-    void Unlock() { mLock.unlock(); }
 
     void SetUrgent() { mUrgentFlag = true; }
 
     void ResetUrgent() { mUrgentFlag = false; }
 
-    LogstoreKafkaSenderStatistics GetSenderStatistics(const LogstoreFeedBackKey& key) {
-        PTScopedLock dataLock(mLock);
-        LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.find(key);
-        if (iter == mLogstoreSenderQueueMap.end()) {
-            return LogstoreKafkaSenderStatistics();
-        }
-        return iter->second.GetSenderStatistics();
-    }
-
     void GetStatus(int32_t& invalidCount,
                    int32_t& totalCount,
                    int32_t& queueSize) {
-        PTScopedLock dataLock(mLock);
-        for (LogstoreFeedBackQueueMapIterator iter = mLogstoreSenderQueueMap.begin();
-             iter != mLogstoreSenderQueueMap.end();
-             ++iter) {
-            ++totalCount;
-            if (!iter->second.IsValid()) {
-                ++invalidCount;
+        std::vector<SingleKafkaSenderQueuePtr> queues;
+        {
+            PTScopedLock dataLock(mLock);
+            for (const auto & [k, v] : mSenderQueue) {
+                queues.push_back(v);
             }
-            queueSize += iter->second.GetSize();
+        }
+        for (const auto & queue : queues) {
+            PTScopedLock dataLock(queue->mLock);
+            for (LogstoreFeedBackQueueMapIterator iter = queue->mLogstoreSenderQueueMap.begin();
+                    iter != queue->mLogstoreSenderQueueMap.end();  ++iter) {
+                ++totalCount;
+                if (!iter->second.IsValid()) {
+                    ++invalidCount;
+                }
+                queueSize += iter->second.GetSize();
+            }
         }
     }
 
     size_t GetSize() {
-        PTScopedLock dataLock(mLock);
-        return mQueueSize;
+        return mQueueSize.load();
+    }
+
+    size_t GetSize(int64_t kafkaProducerKey) {
+        auto queue = getOrCreateKafkaSenderQueue(kafkaProducerKey);
+
+        size_t queueSize = 0;
+        PTScopedLock lock(queue->mLock);
+        for (LogstoreFeedBackQueueMapIterator iter = queue->mLogstoreSenderQueueMap.begin();
+                iter != queue->mLogstoreSenderQueueMap.end();  ++iter) {
+            queueSize += iter->second.GetSize();
+        }
+        return queueSize;
     }
 
 protected:
-    LogstoreFeedBackQueueMap mLogstoreSenderQueueMap;
+    SingleKafkaSenderQueuePtr getKafkaSenderQueue(const LogstoreFeedBackKey& key) {
+        PTScopedLock dataLock(mLock);
+        return getKafkaSenderQueueUnLock(key);
+    }
+
+    SingleKafkaSenderQueuePtr getKafkaSenderQueueUnLock(const LogstoreFeedBackKey& key) {
+        auto it = mLogstoreFeedBackKeyMap.find(key);
+        if (it == mLogstoreFeedBackKeyMap.end()) {
+            return nullptr;
+        }
+
+        auto queue_iter = mSenderQueue.find(it->second);
+        if (queue_iter == mSenderQueue.end()) {
+            return nullptr;
+        }
+        return queue_iter->second;
+    }
+
+    SingleKafkaSenderQueuePtr getOrCreateKafkaSenderQueue(int64_t kafkaProducerKey) {
+        PTScopedLock dataLock(mLock);
+        auto queue_iter = mSenderQueue.find(kafkaProducerKey);
+        if (queue_iter == mSenderQueue.end()) {
+            auto queue = std::make_shared<SingleKafkaSenderQueue>();
+            mSenderQueue.emplace(kafkaProducerKey, queue);
+            return queue;
+        }
+        return queue_iter->second;
+    }
+
     PTMutex mLock;
-    TriggerEvent mTrigger;
+    MuliLevelKafkaSenderQueue mSenderQueue;
+    LogstoreFeedBackKeyMap mLogstoreFeedBackKeyMap;
     LogstoreFeedBackInterface* mFeedBackObj;
     bool mUrgentFlag;
-    size_t mSenderQueueBeginIndex;
 
-    size_t mQueueSize = 0;
+    std::atomic<size_t> mQueueSize = 0;
     size_t mMaxQueueSize;
 };
 

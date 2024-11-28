@@ -259,7 +259,7 @@ void Application::Start() {
     createStatusFile();
 
     time_t curTime = 0, lastProfilingCheckTime = 0, lastTcmallocReleaseMemTime = 0, lastConfigCheckTime = 0,
-           lastUpdateMetricTime = 0, lastCheckTagsTime = 0;
+           lastUpdateMetricTime = 0, lastCheckTagsTime = 0, lastClearKafkaThreadTime = 0;
     while (true) {
         curTime = time(NULL);
         if (curTime - lastCheckTagsTime >= INT32_FLAG(file_tags_update_interval)) {
@@ -287,6 +287,10 @@ void Application::Start() {
         if (curTime - lastUpdateMetricTime >= 40) {
             CheckCriticalCondition(curTime);
             lastUpdateMetricTime = curTime;
+        }
+        if (curTime - lastClearKafkaThreadTime >= 300) {
+            KafkaSender::Instance()->ClearKafakProducerThread();
+            lastClearKafkaThreadTime = curTime;
         }
         if (mSigTermSignalFlag.load()) {
             LOG_INFO(sLogger, ("received SIGTERM signal", "exit process"));

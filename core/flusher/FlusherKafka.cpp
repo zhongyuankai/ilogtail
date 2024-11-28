@@ -167,6 +167,7 @@ bool FlusherKafka::Start() {
 
 bool FlusherKafka::Stop(bool isPipelineRemoving) {
     KafkaAggregator::GetInstance()->RemoveFlusher(this);
+    KafkaSender::Instance()->RemoveKafkaProducer(kafkaProducerKey);
     return true;
 }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/WaitObject.h"
 #include "common/Lock.h"
 #include "common/Thread.h"
 #include "flusher/KafkaSenderQueueParam.h"
@@ -19,22 +18,43 @@ namespace logtail {
 
 class KafkaSenderCallback : public RdKafka::DeliveryReportCb {
 public:
-    KafkaSenderCallback(std::atomic_int & sendFailedCount_)
-        : sendFailedCount(sendFailedCount_) {
-    }
-
     void dr_cb(RdKafka::Message & message);
 
-    std::atomic_int & sendFailedCount;
+    size_t getSendFailedCount() {
+        return mSendFailedCount.load();
+    }
+
+    std::atomic_int mSendFailedCount;
 };
 
 using KafkaSenderCallbackPtr = std::shared_ptr<KafkaSenderCallback>;
 using KafkaProducerPtr = std::shared_ptr<RdKafka::Producer>;
 
-struct KafkaProducerStruct
-{
-    KafkaProducerPtr producer;
-    KafkaSenderCallbackPtr callback;
+struct ThreadFlags {
+    volatile bool mFlushLog = false;
+    volatile bool mInteruptFlag = false;
+};
+using ThreadFlagsPtr = std::shared_ptr<ThreadFlags>;
+
+struct KafkaProducerEntry {
+    KafkaProducerPtr mProducer;
+    KafkaSenderCallbackPtr mCallback;
+    ThreadFlagsPtr mThreadFlags;
+    ThreadPtr mThread;
+    int32_t mThreadNo;
+    int32_t mTaskCount;
+
+    KafkaProducerEntry(KafkaProducerPtr producer, KafkaSenderCallbackPtr callback)
+        : mProducer(producer)
+        , mCallback(callback)
+        , mThreadFlags(std::make_shared<ThreadFlags>())
+        , mTaskCount(1) {
+    }
+    
+    void setThread(ThreadPtr thread, int32_t threadNo) {
+        mThread = thread;
+        mThreadNo = threadNo;
+    }
 };
 
 class KafkaSender {
@@ -44,6 +64,9 @@ public:
     bool PushQueue(LoggroupEntry * data);
 
     bool CreateKafkaProducer(std::string & brokers, std::string & username, std::string & password);
+    void RemoveKafkaProducer(int64_t kafkaProducerKey);
+
+    void ClearKafakProducerThread();
 
     ~KafkaSender();
 
@@ -56,28 +79,30 @@ public:
 
     bool FlushOut(int32_t time_interval_in_mili_seconds);
 
-    size_t GetSendingCount();
 private:
     KafkaSender();
 
-    void DaemonSender();
+    void DaemonSender(int64_t kafkaProducerKey);
 
     bool IsFlush();
     void SetFlush();
     void ResetFlush();
 
-    std::atomic_int mLastDaemonRunTime{0};
-    std::atomic_int mLastSendDataTime{0};
-
-    std::atomic_int sendFailedCount{0};
-    std::atomic_int pushQueueFailedCount{0};
+    std::atomic_int32_t mSendBufferCount{0};
+    std::atomic_size_t mSendBufferBytes{0};
+    std::atomic_size_t mSendLines{0};
+    std::atomic_size_t mSendErrorCount{0};
+    std::atomic_size_t mSendErrorQueueFullCount{0};
+    std::atomic_uint64_t mSendTime{0};
+    std::atomic_int mPushQueueFailedCount{0};
 
     LogstoreKafkaSenderQueue<KafkaSenderQueueParam> mSenderQueue;
 
-    volatile bool mFlushLog;
-
     std::mutex kafkaProducersMutex;
-    std::unordered_map<int64_t, KafkaProducerStruct> kafkaProducers;
+    std::unordered_map<int64_t, std::shared_ptr<KafkaProducerEntry>> kafkaProducers;
+    int32_t mThreadNo = 0;
+    std::atomic_int mMetricThreadNo{0};
+    bool needClearThead = false;
 };
 
 } 
