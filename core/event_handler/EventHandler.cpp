@@ -293,6 +293,12 @@ void CreateModifyHandler::HandleTimeOut() {
     mCreateHandlerPtr->HandleTimeOut(); // empty call
 }
 
+void CreateModifyHandler::UpdateFileInfoMap(const std::string & path) {
+    for (ModifyHandlerMap::iterator iter = mModifyHandlerPtrMap.begin(); iter != mModifyHandlerPtrMap.end(); ++iter) {
+        iter->second->UpdateFileInfoMap(path);
+    }
+}
+
 // implementation for ModifyHandler
 ModifyHandler::ModifyHandler(const std::string& configName, const FileDiscoveryConfig& pConfig)
     : mConfigName(configName) {
@@ -308,6 +314,15 @@ ModifyHandler::ModifyHandler(const std::string& configName, const FileDiscoveryC
 
 ModifyHandler::~ModifyHandler() {
 }
+
+std::string ModifyHandler::GetReaderQueueName(const std::string & path) {
+    FileDiscoveryConfig config = FileServer::GetInstance()->GetFileDiscoveryConfig(mConfigName);
+    if (config.first) {
+        return PathJoin(path, config.first->GetFilePattern());
+    }
+    return {};
+}
+
 
 void ModifyHandler::MakeSpaceForNewReader() {
     if (mDevInodeReaderMap.size()
@@ -363,14 +378,15 @@ LogFileReaderPtr ModifyHandler::CreateLogFileReaderPtr(const string& path,
                                                        const FileDiscoveryConfig& discoveryConfig,
                                                        uint32_t exactlyonceConcurrency,
                                                        bool forceBeginingFlag) {
-    if (mNameReaderMap.find(name) == mNameReaderMap.end()) {
+    std::string queueName = GetReaderQueueName(path);
+    if (mNameReaderMap.find(queueName) == mNameReaderMap.end()) {
         LOG_INFO(sLogger,
                  ("create new log reader queue, project",
                   readerConfig.second->GetProjectName())("logstore", readerConfig.second->GetLogstoreName())(
-                     "config", readerConfig.second->GetConfigName())("log reader queue name", PathJoin(path, name))(
+                     "config", readerConfig.second->GetConfigName())("log reader queue name", queueName)(
                      "new log reader queue count", mNameReaderMap.size() + 1));
     }
-    LogFileReaderPtrArray& readerArray = mNameReaderMap[name];
+    LogFileReaderPtrArray& readerArray = mNameReaderMap[queueName];
 
     LogFileReaderPtr readerPtr(LogFileReader::CreateLogFileReader(path,
                                                                   name,
@@ -418,7 +434,7 @@ LogFileReaderPtr ModifyHandler::CreateLogFileReaderPtr(const string& path,
     if (readerPtr->GetRealLogPath().empty() || readerPtr->GetRealLogPath() == readerPtr->GetHostLogPath()) {
         backFlag = true;
         // if reader is a new file(not from checkpoint), and file is rotate file, reset file pos
-        if (readerArray.size() > 0 && !readerPtr->IsFromCheckPoint()) {
+        if (readerArray.size() > 0 && !readerPtr->IsFromCheckPointV3()) {
             LOG_DEBUG(sLogger, ("file rotate, reset new reader pos", PathJoin(path, name)));
             readerPtr->ResetLastFilePos();
         }
@@ -445,7 +461,7 @@ LogFileReaderPtr ModifyHandler::CreateLogFileReaderPtr(const string& path,
         } else {
             // if first create, we should check and update file signature, because when blocked, new reader will have no
             // chance to update signature
-            if (!readerPtr->CheckFileSignatureAndOffset(false)) {
+            if (!readerPtr->CheckFileSignatureAndOffsetV3(false)) {
                 LOG_ERROR(
                     sLogger,
                     ("stop creating new reader",
@@ -509,10 +525,11 @@ void ModifyHandler::Handle(const Event& event) {
 
     DevInodeLogFileReaderMap::iterator devInodeIter
         = devInode.IsValid() ? mDevInodeReaderMap.find(devInode) : mDevInodeReaderMap.end();
-
+    
     // when file is deleted or movefrom, we can't find devinode, so set all log reader's delete flag
     if (event.IsDeleted() || event.IsMoveFrom()) {
-        NameLogFileReaderMap::iterator iter = mNameReaderMap.find(name);
+        std::string queueName = GetReaderQueueName(path);
+        NameLogFileReaderMap::iterator iter = mNameReaderMap.find(queueName);
         if (iter != mNameReaderMap.end()) {
             LogFileReaderPtrArray& readerArray = iter->second;
             // only set when reader array size is 1
@@ -526,7 +543,7 @@ void ModifyHandler::Handle(const Event& event) {
                              "delete event has come, and only one reader exists in the corresponding log queue, and "
                              "the queue header file has been read or is forced to close")(
                                 "project", readerArray[0]->GetProject())("logstore", readerArray[0]->GetLogstore())(
-                                "config", mConfigName)("log reader queue name", readerArray[0]->GetHostLogPath())(
+                                "config", mConfigName)("log reader queue name", queueName)(
                                 "file device", readerArray[0]->GetDevInode().dev)(
                                 "file inode", readerArray[0]->GetDevInode().inode)("file size",
                                                                                    readerArray[0]->GetFileSize()));
@@ -561,6 +578,7 @@ void ModifyHandler::Handle(const Event& event) {
             }
         }
     } else if (event.IsModify()) {
+        std::string queueName = GetReaderQueueName(path);
         // devInode cannot be found, this means a rotate file(like a.log.1) has event, and reader for rotate file is
         // moved to mRotatorReaderMap
         if (devInode.IsValid() && devInodeIter == mDevInodeReaderMap.end()) {
@@ -574,7 +592,7 @@ void ModifyHandler::Handle(const Event& event) {
                 // if sig is same and file size not change, ignore it
                 // if sig is same and file size is changed, move reader to normal reader map
                 LogFileReaderPtr rotatorReader = rotateIter->second;
-                LogFileReader::FileCompareResult cmpRst = rotatorReader->CompareToFile(logPath);
+                LogFileReader::FileCompareResult cmpRst = rotatorReader->CompareToFileV3(logPath);
                 LOG_DEBUG(sLogger,
                           ("find rotator reader", logPath)("compare result", (int)cmpRst)(
                               rotatorReader->GetHostLogPath(), rotatorReader->GetRealLogPath())(
@@ -588,7 +606,7 @@ void ModifyHandler::Handle(const Event& event) {
                         break;
                     case LogFileReader::FileCompareResult_SigSameSizeChange: {
                         rotatorReader->UpdateLogPath(logPath);
-                        LogFileReaderPtrArray& readerArray = mNameReaderMap[rotatorReader->GetHostLogPathFile()];
+                        LogFileReaderPtrArray& readerArray = mNameReaderMap[queueName];
                         // new log
                         if (rotatorReader->GetRealLogPath() == rotatorReader->GetHostLogPath()) {
                             readerArray.push_back(rotatorReader);
@@ -616,7 +634,7 @@ void ModifyHandler::Handle(const Event& event) {
         LogFileReaderPtrArray* readerArrayPtr = NULL;
         if (!devInode.IsValid()) {
             // call stat failed, but we should try to find reader because the log file may be moved to another name
-            NameLogFileReaderMap::iterator iter = mNameReaderMap.find(name);
+            NameLogFileReaderMap::iterator iter = mNameReaderMap.find(queueName);
             if (iter != mNameReaderMap.end()) {
                 readerArrayPtr = &(iter->second);
             } else {
@@ -634,7 +652,7 @@ void ModifyHandler::Handle(const Event& event) {
                 LogFileReaderPtr readerPtr
                     = CreateLogFileReaderPtr(path, name, devInode, readerConfig, multilineConfig, config, concurrency);
                 if (readerPtr.get() == NULL) {
-                    LogFileReaderPtrArray& readerArray = mNameReaderMap[name];
+                    LogFileReaderPtrArray& readerArray = mNameReaderMap[queueName];
                     // if rotate queue is full, try read array header
                     if (readerArray.size() >= readerConfig.first->mRotatorQueueSize) {
                         readerPtr = readerArray[0];
@@ -723,7 +741,7 @@ void ModifyHandler::Handle(const Event& event) {
                         + " ,project:" + reader->GetProject() + " ,logstore:" + reader->GetLogstore());
             }
             // if signature is different and logpath is different, delete this reader and create reader
-            else if (!reader->CheckFileSignatureAndOffset(isFileOpen) && logPath != reader->GetHostLogPath()) {
+            else if (!reader->CheckFileSignatureAndOffsetV3(isFileOpen) && logPath != reader->GetHostLogPath()) {
                 LOG_INFO(sLogger,
                          ("file sig and name both changed, create new reader. new path",
                           logPath)("old path", reader->GetHostLogPath())(ToString(readerArrayPtr->size()),
@@ -1002,6 +1020,40 @@ bool ModifyHandler::IsAllFileRead() {
     return true;
 }
 
+void ModifyHandler::UpdateFileInfoMap(const std::string & path) {
+    fsutil::Dir dir(path);
+    if (!dir.Open()) {
+        auto err = GetErrno();
+        if (!fsutil::Dir::IsENOENT(err)) {
+            LOG_ERROR(sLogger, ("Update file info map, open dir fail", path)("error", ErrnoToString(err)));
+        }
+        return;
+    }
+
+    std::shared_ptr<FileInfoMap> fileInfoMap = std::make_shared<FileInfoMap>();
+    FileDiscoveryConfig config = FileServer::GetInstance()->GetFileDiscoveryConfig(mConfigName);
+    fsutil::Entry ent;
+    while ((ent = dir.ReadNext(false))) {
+        auto entName = ent.Name();
+        if (!IsValidSuffix(entName))
+            continue;
+
+        if (!config.first->IsMatch(path, entName)) {
+            continue;
+
+        }
+
+        string item = PathJoin(path, entName);
+        fsutil::PathStat buf;
+        if (fsutil::PathStat::stat(item, buf) && buf.IsRegFile()) {
+            (*fileInfoMap)[buf.GetDevInode()] = {std::move(item), buf.GetMtime()};
+        }
+    }
+    if (!fileInfoMap->empty()) {
+        mFileInfoMap = fileInfoMap;
+    }
+}
+
 void ModifyHandler::DeleteTimeoutReader() {
     if ((int32_t)mDevInodeReaderMap.size() > INT32_FLAG(logreader_count_maxlimit))
         DeleteTimeoutReader(86400);
@@ -1051,20 +1103,25 @@ void ModifyHandler::DeleteRollbackReader() {
     int32_t curTime = time(NULL);
     DevInodeLogFileReaderMap::iterator readerIter = mRotatorReaderMap.begin();
     vector<DevInode> deletedReaderKeys;
+    std::shared_ptr<FileInfoMap> fileInfoMap = mFileInfoMap;
     for (; readerIter != mRotatorReaderMap.end(); ++readerIter) {
-        int32_t interval = curTime - readerIter->second->GetLastUpdateTime();
+        // int32_t interval = curTime - readerIter->second->GetLastUpdateTime();
         readerIter->second->CloseTimeoutFilePtr(curTime);
-        if (interval > INT32_FLAG(logreader_filerotate_remove_interval)) {
-            deletedReaderKeys.push_back(readerIter->first);
-            LOG_INFO(sLogger,
-                     ("remove the corresponding reader from the reader rotator pool",
-                      "current file has not been updated for a long time")("project", readerIter->second->GetProject())(
-                         "logstore", readerIter->second->GetLogstore())("config", mConfigName)(
-                         "file name", readerIter->second->GetRealLogPath())(
-                         "file device", readerIter->second->GetDevInode().dev)("file inode",
-                                                                               readerIter->second->GetDevInode().inode)(
+
+        if (fileInfoMap != nullptr) {
+            auto iter = fileInfoMap->find(readerIter->first);
+            if (iter == fileInfoMap->end()) {
+                deletedReaderKeys.push_back(readerIter->first);
+                LOG_INFO(sLogger,
+                        ("remove the corresponding reader from the reader rotator pool",
+                        "current file has been deleted")("project", readerIter->second->GetProject())(
+                        "logstore", readerIter->second->GetLogstore())("config", mConfigName)(
+                        "file name", readerIter->second->GetRealLogPath())(
+                        "file device", readerIter->second->GetDevInode().dev)("file inode",
+                                                                            readerIter->second->GetDevInode().inode)(
                          "file size", readerIter->second->GetFileSize())("last file position",
-                                                                         readerIter->second->GetLastFilePos()));
+                                                                        readerIter->second->GetLastFilePos()));
+            }
         }
     }
     vector<DevInode>::iterator keyIter = deletedReaderKeys.begin();

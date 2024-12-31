@@ -23,6 +23,7 @@ namespace logtail {
 class PipelineManagerUnittest : public testing::Test {
 public:
     void TestPipelineManagement() const;
+    void TestPipelineContent() const;
 };
 
 void PipelineManagerUnittest::TestPipelineManagement() const {
@@ -34,7 +35,25 @@ void PipelineManagerUnittest::TestPipelineManagement() const {
     APSARA_TEST_EQUAL(nullptr, PipelineManager::GetInstance()->FindPipelineByName("test3"));
 }
 
+void PipelineManagerUnittest::TestPipelineContent() const {
+    PipelineContext context;
+    context.SetConfigName("107092_212418");
+    context.SetLogMod4PathKey("/home/ubuntu/ilogtail/logtail_test.log*", false);
+
+    APSARA_TEST_EQUAL("107092_212418__home_ubuntu_ilogtail_logtail_test.log", context.GetLogMod4PathKey());
+    APSARA_TEST_EQUAL(107092, context.GetLogId());
+    APSARA_TEST_EQUAL(212418, context.GetPathId());
+
+    context.SetConfigName("ubuntu_107092_212418");
+    context.SetLogMod4PathKey("/home/ubuntu/ilogtail/logtail_test.log*", true);
+
+    APSARA_TEST_EQUAL("ubuntu_107092_212418__home_ubuntu_ilogtail_logtail_test.log", context.GetLogMod4PathKey());
+    APSARA_TEST_EQUAL(107092, context.GetLogId());
+    APSARA_TEST_EQUAL(212418, context.GetPathId());
+}
+
 UNIT_TEST_CASE(PipelineManagerUnittest, TestPipelineManagement)
+UNIT_TEST_CASE(PipelineManagerUnittest, TestPipelineContent)
 
 } // namespace logtail
 

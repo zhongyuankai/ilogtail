@@ -2,14 +2,15 @@
 set -xue
 set -o pipefail
 
-OUT_DIR=${1:-output}
-DIST_DIR=${2:-dist}
-PACKAGE_DIR=${3:-ilogtail-2.0.7}
-ROOTDIR=$(cd $(dirname "${BASH_SOURCE[0]}") && cd .. && pwd)
+CONTINUE=${1:-c}
+OUT_DIR=${2:-output}
+DIST_DIR=${3:-dist}
+PACKAGE_DIR=${4:-ilogtail-2.0.7}
+ROOTDIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
 
 # 1.进行编译
 continue=0
-if [ "$1" = "-c" ];
+if [ "$CONTINUE" = "-c" ];
 then
   continue=1
 fi
@@ -43,6 +44,7 @@ cp "${ROOTDIR}/ilogtail_config.json" "${ROOTDIR}/${OUT_DIR}"
 cp "${ROOTDIR}/control" "${ROOTDIR}/${OUT_DIR}"
 
 # 4. 准备dist目录
+rm -fr "${ROOTDIR}/${DIST_DIR}"
 mkdir -p "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail_config.json" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
@@ -50,7 +52,8 @@ cp "${ROOTDIR}/${OUT_DIR}/control" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 
 # 5. 去除符号信息，打包dist
 strip "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail"
+
 cd "${ROOTDIR}/${DIST_DIR}"
-tar -cvzf "${PACKAGE_DIR}.tar.gz" "${PACKAGE_DIR}"
+tar -cvzf "${PACKAGE_DIR}.tar.gz" -C "${PACKAGE_DIR}" "."
 rm -rf "${PACKAGE_DIR}"
 cd "${ROOTDIR}"

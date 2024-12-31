@@ -63,6 +63,7 @@ set(DEP_NAME_LIST
         restclient-cpp
         absl
         rdkafka
+        openssl
         )
 
 if (NOT NO_TCMALLOC)
@@ -396,6 +397,12 @@ macro(link_rdkafka target_name)
     target_link_libraries(${target_name} "${rdkafka_${LIBRARY_DIR_SUFFIX}}/librdkafka.a")
     target_link_libraries(${target_name} "${rdkafka_${LIBRARY_DIR_SUFFIX}}/librdkafka++.a")
 endmacro()
+
+# openssl
+macro(link_openssl target_name)
+    target_link_libraries(${target_name} "${openssl_${LIBRARY_DIR_SUFFIX}}/libcrypto.a")
+endmacro()
+
 
 
 

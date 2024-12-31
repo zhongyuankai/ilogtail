@@ -141,6 +141,18 @@ bool InputFile::Init(const Json::Value& config, Json::Value& optionalGoPipeline)
         mExactlyOnceConcurrency = exactlyOnceConcurrency;
     }
 
+    if (!GetMandatoryBoolParam(config, "IsCollectContainer", mIsCollectContainer, errorMsg)) {
+        PARAM_WARNING_DEFAULT(mContext->GetLogger(),
+                              mContext->GetAlarm(),
+                              errorMsg,
+                              false,
+                              sName,
+                              mContext->GetConfigName(),
+                              mContext->GetProjectName(),
+                              mContext->GetLogstoreName(),
+                              mContext->GetRegion());
+    }
+
     return true;
 }
 

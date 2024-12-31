@@ -46,6 +46,8 @@ public:
     uint32_t mMaxCheckpointDirSearchDepth = 0;
     uint32_t mExactlyOnceConcurrency = 0;
 
+    bool mIsCollectContainer = false;
+
 private:
     void GenerateContainerMetaFetchingGoPipeline(Json::Value& res) const;
 };

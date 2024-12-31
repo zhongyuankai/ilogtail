@@ -1,4 +1,6 @@
 #include "models/StringView.h"
+#include "common/LogFileOperator.h"
+#include "common/StringTools.h"
 
 namespace logtail {
 
@@ -10,5 +12,17 @@ time_t parseTime(const StringView & timeString, const std::string & timeFormat);
 
 /** 转换Java风格的时间格式到C的strptime格式 */
 std::string convertJavaFormatToStrptime(const std::string & javaFormat);
+
+/** 兼容SWAN */
+std::string getMd5(const std::string& content);
+/** 根据plainText获取其对应的32位md5编码 */
+std::string getMd5ByHostName(std::string plainText, std::string & hostname);
+std::string getHostName();
+std::string getHostNameSuffix();
+std::string readFirstLine(LogFileOperator & fileOp);
+bool isNotBlank(const std::string & str);
+
+int StringToInt32(const std::string& str);
+
 
 }

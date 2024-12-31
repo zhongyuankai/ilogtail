@@ -52,6 +52,7 @@ private:
         int timeFormatLength;
         std::string timeStartFlag;
         int timeStartFlagIndex;
+        bool IsCollectContainer;
     };
 
     struct Container {

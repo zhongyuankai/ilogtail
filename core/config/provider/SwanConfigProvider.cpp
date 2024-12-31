@@ -52,14 +52,6 @@ std::pair<std::string, std::string> getUsernamePasswd(const std::string & saslJa
     return std::make_pair(username, password);
 }
 
-int StringToInt(const std::string& str) {
-    try {
-        return StringTo<int>(str);
-    } catch (...) {
-        return -1;
-    }
-}
-
 void SwanConfigProvider::Init() {
     const Json::Value & confJson = AppConfig::GetInstance()->GetConfig();
 
@@ -205,6 +197,7 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
 
     input1["AppendingLogPositionMeta"] = true;
     input1["AllowingIncludedByMultiConfigs"] = true;
+    input1["IsCollectContainer"] = swanConfig.IsCollectContainer;
 
     inputsNode.push_back(input1);
     rootNode["inputs"] = inputsNode;
@@ -220,12 +213,12 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
     flusher1["HostName"] = swanConfig.hostName;
     flusher1["OriginalAppName"] = swanConfig.originalAppName;
     flusher1["OdinLeaf"] = swanConfig.odinLeaf;
-    flusher1["LogId"] = StringToInt(swanConfig.logModelId);
+    flusher1["LogId"] = StringToInt32(swanConfig.logModelId);
     flusher1["AppName"] = swanConfig.appName;
     flusher1["QueryFrom"] = swanConfig.queryFrom;
-    flusher1["IsService"] = StringToInt(swanConfig.isService);
+    flusher1["IsService"] = StringToInt32(swanConfig.isService);
     flusher1["DIDIENV_ODIN_SU"] = swanConfig.odinSu;
-    flusher1["PathId"] = StringToInt(swanConfig.pathId);
+    flusher1["PathId"] = StringToInt32(swanConfig.pathId);
 
     flushersNode.push_back(flusher1);
     rootNode["flushers"] = flushersNode;
@@ -283,6 +276,7 @@ void SwanConfigProvider::convertContainerConfigs(std::string & serviceName,
         swanConfig.queryFrom = eventMetricsConfig["queryFrom"].asString();
         swanConfig.isService = std::to_string(eventMetricsConfig["isService"].asInt());
         swanConfig.odinSu = swanConfig.odinLeaf + "." + swanConfig.appName;
+        swanConfig.IsCollectContainer = true;
 
         const Json::Value & logPaths = sourceConfig["logPaths"];
         for (const Json::Value & logPath : logPaths) {
@@ -410,6 +404,7 @@ void SwanConfigProvider::generateDirectConfigs(const std::string & hostname) {
             swanConfig.timeStartFlag = sourceConfig["timeStartFlag"].asString();
             swanConfig.timeFormat = sourceConfig["timeFormat"].asString();
             swanConfig.timeFormatLength = sourceConfig["timeFormatLength"].asInt();
+            swanConfig.IsCollectContainer = false;
 
             const Json::Value & logPaths = sourceConfig["logPaths"];
             for (const Json::Value & logPath : logPaths) {

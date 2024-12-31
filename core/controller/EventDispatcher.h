@@ -76,6 +76,19 @@ struct DirInfo {
         : mPath(path), mInode(inode), mIsSymbolicLink(isSymbolicLink), mHandler(handler) {}
 };
 
+struct FileNode {
+    std::string mFileName;
+    DevInode mDevInode;
+    time_t mModifyTime;
+    int64_t mFileSize;
+
+    FileNode (const std::string & fileName, DevInode devInode, time_t modifyTime, int64_t fileSize)
+    : mFileName(fileName)
+    , mDevInode(devInode)
+    , mModifyTime(modifyTime)
+    , mFileSize(fileSize) {}
+};
+
 class EventDispatcher {
 public:
     static EventDispatcher* GetInstance() {
@@ -212,6 +225,7 @@ public:
 
     void ProcessHandlerTimeOut();
     void AddExistedCheckPointFileEvents();
+    void UpdateFileInfoMap();
 
     void DumpInotifyWatcherDirs();
 
@@ -232,6 +246,7 @@ protected:
      */
     bool AddTimeoutWatch(const char* path);
     void AddExistedFileEvents(const char* path, int wd);
+    void AddExistedFileEventsV3(const char* path, int wd);
 
     enum class ValidateCheckpointResult {
         kNormal,

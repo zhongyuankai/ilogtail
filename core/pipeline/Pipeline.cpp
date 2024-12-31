@@ -85,6 +85,7 @@ bool Pipeline::Init(Config&& config) {
             // for special treatment below
             if (name == InputFile::sName) {
                 inputFile = static_cast<const InputFile*>(mInputs[0]->GetPlugin());
+                mContext.SetLogMod4PathKey(inputFile->mFileDiscovery.mFilePaths[0], inputFile->mIsCollectContainer);
             }
         } else {
             AddPluginToGoPipeline(*detail, "inputs", mGoPipelineWithInput);

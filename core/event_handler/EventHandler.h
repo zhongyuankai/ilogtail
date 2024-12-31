@@ -40,6 +40,7 @@ public:
     virtual void HandleTimeOut() = 0;
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag) = 0;
     virtual bool IsAllFileRead() { return true; }
+    virtual void UpdateFileInfoMap(const std::string & path) {}
     virtual ~EventHandler() {}
 };
 
@@ -64,11 +65,19 @@ private:
     std::string mConfigName;
     int32_t mLastOverflowErrorTime;
 
+    struct FileInfo {
+        std::string mFilePath;
+        time_t mModifyTime;
+    };
+    using FileInfoMap = std::unordered_map<DevInode, FileInfo, DevInodeHash, DevInodeEqual>;
+    std::shared_ptr<FileInfoMap> mFileInfoMap = nullptr;
+
     void DeleteTimeoutReader();
     void DeleteTimeoutReader(int32_t timeoutInterval);
     void DeleteRollbackReader();
     void MakeSpaceForNewReader();
 
+    std::string GetReaderQueueName(const std::string & path);
 
     static bool CompareReaderByUpdateTime(const LogFileReader* left, const LogFileReader* right) {
         return left->GetLastUpdateTime() < right->GetLastUpdateTime();
@@ -112,6 +121,7 @@ public:
     virtual void Handle(const Event& event);
     virtual void HandleTimeOut();
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag);
+    virtual void UpdateFileInfoMap(const std::string & path);
     bool IsAllFileRead() override;
 
 #ifdef APSARA_UNIT_TEST_MAIN
@@ -166,6 +176,7 @@ public:
     virtual void Handle(const Event& event);
     virtual void HandleTimeOut();
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag);
+    virtual void UpdateFileInfoMap(const std::string & path);
     bool IsAllFileRead() override;
 
     ModifyHandler* GetOrCreateModifyHandler(const std::string& configName, const FileDiscoveryConfig& pConfig);

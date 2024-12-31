@@ -15,6 +15,7 @@
 #include "file_server/FileServer.h"
 
 #include "checkpoint/CheckPointManager.h"
+#include "checkpoint/CheckPointManagerV3.h"
 #include "common/Flags.h"
 #include "common/StringTools.h"
 #include "common/TimeUtil.h"
@@ -33,12 +34,12 @@ namespace logtail {
 
 void FileServer::Start() {
     ConfigManager::GetInstance()->LoadDockerConfig();
-    CheckPointManager::Instance()->LoadCheckPoint();
+    CheckPointManagerV3::Instance()->LoadCheckPoint();
     ConfigManager::GetInstance()->RegisterHandlers();
     LOG_INFO(sLogger, ("watch dirs", "succeeded"));
-    EventDispatcher::GetInstance()->AddExistedCheckPointFileEvents();
+    // EventDispatcher::GetInstance()->AddExistedCheckPointFileEvents();
     // the dump time must be reset after dir registration, since it may take long on NFS.
-    CheckPointManager::Instance()->ResetLastDumpTime();
+    CheckPointManagerV3::Instance()->ResetLastDumpTime();
     if (BOOL_FLAG(enable_polling_discovery)) {
         PollingModify::GetInstance()->Start();
         PollingDirFile::GetInstance()->Start();
@@ -51,7 +52,7 @@ void FileServer::Pause(bool isConfigUpdate) {
     PauseInner();
     if (isConfigUpdate) {
         EventDispatcher::GetInstance()->DumpAllHandlersMeta(true);
-        CheckPointManager::Instance()->DumpCheckPointToLocal();
+        CheckPointManagerV3::Instance()->DumpCheckPointToLocal();
         EventDispatcher::GetInstance()->ClearBrokenLinkSet();
         PollingDirFile::GetInstance()->ClearCache();
         ConfigManager::GetInstance()->ClearFilePipelineMatchCache();
@@ -85,9 +86,9 @@ void FileServer::Resume(bool isConfigUpdate) {
     LOG_INFO(sLogger, ("file server resume", "starts"));
     ConfigManager::GetInstance()->RegisterHandlers();
     LOG_INFO(sLogger, ("watch dirs", "succeeded"));
-    if (isConfigUpdate) {
-        EventDispatcher::GetInstance()->AddExistedCheckPointFileEvents();
-    }
+    // if (isConfigUpdate) {
+    //     EventDispatcher::GetInstance()->AddExistedCheckPointFileEvents();
+    // }
     LogInput::GetInstance()->Resume();
     if (BOOL_FLAG(enable_polling_discovery)) {
         PollingModify::GetInstance()->Resume();
@@ -99,7 +100,7 @@ void FileServer::Resume(bool isConfigUpdate) {
 void FileServer::Stop() {
     PauseInner();
     EventDispatcher::GetInstance()->DumpAllHandlersMeta(false);
-    CheckPointManager::Instance()->DumpCheckPointToLocal();
+    CheckPointManagerV3::Instance()->DumpCheckPointToLocal();
 }
 
 FileDiscoveryConfig FileServer::GetFileDiscoveryConfig(const string& name) const {

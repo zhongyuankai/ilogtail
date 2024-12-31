@@ -31,6 +31,7 @@
 #include "app_config/AppConfig.h"
 #include "checkpoint/CheckPointManager.h"
 #include "checkpoint/CheckpointManagerV2.h"
+#include "checkpoint/CheckPointManagerV3.h"
 #include "common/ErrorUtil.h"
 #include "common/FileSystemUtil.h"
 #include "common/HashUtil.h"
@@ -39,6 +40,7 @@
 #include "common/StringTools.h"
 #include "common/TimeUtil.h"
 #include "common/version.h"
+#include "common/LogFileUtils.h"
 #include "event/Event.h"
 #include "event_handler/EventHandler.h"
 #include "event_handler/LogInput.h"
@@ -91,6 +93,8 @@ DEFINE_FLAG_INT32(checkpoint_find_max_cache_size, "", 100000);
 DEFINE_FLAG_INT32(max_watch_dir_count, "", 100 * 1000);
 DEFINE_FLAG_STRING(inotify_watcher_dirs_dump_filename, "", "inotify_watcher_dirs");
 DEFINE_FLAG_INT32(default_max_inotify_watch_num, "the max allowed inotify watch dir number", 3000);
+DEFINE_FLAG_INT32(update_file_info_interval, "The interval between updating file information", 180);
+
 
 namespace logtail {
 
@@ -311,7 +315,7 @@ bool EventDispatcher::RegisterEventHandler(const char* path,
     DirInfo* dirInfo = new DirInfo(path, inode, isSymbolicLink, handler);
     AddOneToOneMapEntry(dirInfo, wd);
     ++mWatchNum;
-    AddExistedFileEvents(path, wd);
+    AddExistedFileEventsV3(path, wd);
     if (dirTimeOutFlag) {
         AddTimeoutWatch(path);
         LOG_DEBUG(sLogger,
@@ -398,6 +402,132 @@ void EventDispatcher::AddExistedFileEvents(const char* path, int wd) {
                  ("generate MODIFY event for the recently updated existing file",
                   PathJoin(eventVec[i]->GetSource(), eventVec[i]->GetObject())));
     }
+    if (eventVec.size() > 0)
+        LogInput::GetInstance()->PushEventQueue(eventVec);
+}
+
+// read files when add dir inotify watcher at first time
+void EventDispatcher::AddExistedFileEventsV3(const char* path, int wd) {
+    fsutil::Dir dir(path);
+    if (!dir.Open()) {
+        auto err = GetErrno();
+        if (!fsutil::Dir::IsENOENT(err)) {
+            LOG_ERROR(sLogger, ("Open dir fail", path)("error", ErrnoToString(err)));
+        }
+        return;
+    }
+    vector<FileDiscoveryConfig> configs;
+    ConfigManager::GetInstance()->GetRelatedConfigs(path, configs);
+
+    std::vector<FileNode> fileNodes;
+
+    fsutil::Entry ent;
+    int32_t curTime = time(NULL);
+    vector<Event*> eventVec;
+    int32_t tailFileCount = 0;
+    while ((ent = dir.ReadNext(false))) {
+        auto entName = ent.Name();
+        if (!IsValidSuffix(entName))
+            continue;
+
+        std::string item = PathJoin(path, entName);
+
+        for (auto iter = configs.begin(); iter != configs.end(); ++iter) {
+            if (fnmatch((*iter).first->GetFilePattern().c_str(), entName.c_str(), 0) == 0) {
+                fsutil::PathStat buf;
+                if (fsutil::PathStat::stat(item, buf) && buf.IsRegFile()) {
+                    fileNodes.emplace_back(entName, buf.GetDevInode(), buf.GetMtime(), buf.GetFileSize());
+                    break;
+                }
+            }
+        }
+    }
+
+    /// 按修改时间倒序
+    std::sort(fileNodes.begin(), fileNodes.end(), [](const FileNode & lhs, const FileNode & rhs) {
+        return lhs.mModifyTime > rhs.mModifyTime;
+    });
+
+    std::string pathStr = string(path);
+    for (auto iter = configs.begin(); iter != configs.end(); ++iter) {
+        const std::string & logMod4PathKey = iter->second->GetLogMod4PathKey();
+        int32_t logId = iter->second->GetLogId();
+        int32_t pathId = iter->second->GetPathId();
+        auto & checkPoints = CheckPointManagerV3::Instance()->GetCheckPoints(logMod4PathKey);
+
+        bool isNewTask = checkPoints.empty();
+
+        int32_t idx = 0;
+        for (const auto & fileNode: fileNodes) {
+            std::string item = PathJoin(path, fileNode.mFileName);
+            if (fnmatch((*iter).first->GetFilePattern().c_str(), fileNode.mFileName.c_str(), 0) == 0) {
+                eventVec.push_back(new Event(pathStr, fileNode.mFileName, EVENT_MODIFY, wd));
+                LOG_INFO(sLogger, ("generate MODIFY event for the recently updated existing file",
+                                (pathStr, eventVec.back()->GetObject())));
+
+                std::string fileKey = ToString(fileNode.mDevInode.dev) + "_" + ToString(fileNode.mDevInode.inode);
+                std::string fileHeadMd5;
+                LogFileOperator logFileOp;
+                logFileOp.Open(item.c_str());
+                if (!logFileOp.IsOpen()) {
+                    LOG_ERROR(sLogger, ("open file failed, file", item));
+                    fileHeadMd5 = "Failed";
+                } else {
+                    std::string firstLine = readFirstLine(logFileOp);
+                    CheckAndUpdateSignatureV3(firstLine, fileHeadMd5);
+                }
+
+                if (auto it = checkPoints.find(fileKey); it != checkPoints.end()) {
+                    CheckPointPtr checkPoint = it->second;
+                    checkPoint->mFileName = fileNode.mFileName;
+                    if (fileHeadMd5 != checkPoint->mFileHeadMd5 || fileHeadMd5 == "Failed") {
+                        LOG_INFO(sLogger, ("FileKey is the same, MD5 is different, which means that Inode has been reused! filePath", item)
+                            ("fileKey", fileKey)("newMd5", fileHeadMd5)("oldMd5", it->second->mFileHeadMd5));
+                        checkPoint->mFileHeadMd5 = fileHeadMd5;
+                        checkPoint->mOffset = 0;
+                        checkPoint->mIdxInReaderArray = idx;
+                        idx++;
+                        checkPoint->mFileOpenFlag = true;
+                    } else {
+                        if (checkPoint->mLastUpdateTime < fileNode.mModifyTime || checkPoint->mOffset < fileNode.mFileSize) {
+                            // 位点时间小于文件修改时间 或者 文件偏移量小于文件长度
+                            checkPoint->mIdxInReaderArray = idx;
+                            idx++;
+                            checkPoint->mFileOpenFlag = true;
+                        } else {
+                            checkPoint->mIdxInReaderArray = LogFileReader::CHECKPOINT_IDX_OF_NOT_IN_READER_ARRAY;
+                            checkPoint->mFileOpenFlag = false;
+                        }
+                    }
+                } else {
+                    CheckPointPtr checkPoint = CheckPointPtr(new CheckPoint(
+                        0,
+                        fileHeadMd5,
+                        fileNode.mDevInode,
+                        logMod4PathKey,
+                        iter->second->GetConfigName(),
+                        fileKey,
+                        item,
+                        fileNode.mModifyTime,
+                        logId,
+                        pathId
+                    ));
+
+                    if (isNewTask) {
+                        checkPoint->mOffset = fileNode.mFileSize;
+                        checkPoint->mIdxInReaderArray = LogFileReader::CHECKPOINT_IDX_OF_NOT_IN_READER_ARRAY;
+                        checkPoint->mFileOpenFlag = false;
+                    } else {
+                        checkPoint->mIdxInReaderArray = idx;
+                        idx++;
+                        checkPoint->mFileOpenFlag = true;
+                    }
+                    checkPoints[fileKey] = checkPoint;
+                }
+            }
+        }
+    } 
+
     if (eventVec.size() > 0)
         LogInput::GetInstance()->PushEventQueue(eventVec);
 }
@@ -962,18 +1092,18 @@ void EventDispatcher::DumpAllHandlersMeta(bool remove) {
         if (remove)
             ConfigManager::GetInstance()->AddHandlerToDelete((it->second)->mHandler);
     }
-    for (size_t i = 0; i < timeout.size(); ++i) {
-        int wd = timeout[i];
-        string path = mWdDirInfoMap[wd]->mPath;
-        if (remove) {
-            UnregisterEventHandler(path.c_str());
-            ConfigManager::GetInstance()->RemoveHandler(path, false);
-            if (ConfigManager::GetInstance()->FindBestMatch(path).first == NULL) {
-                continue;
-            }
-        }
-        CheckPointManager::Instance()->AddDirCheckPoint(path);
-    }
+    // for (size_t i = 0; i < timeout.size(); ++i) {
+    //     int wd = timeout[i];
+    //     string path = mWdDirInfoMap[wd]->mPath;
+    //     if (remove) {
+    //         UnregisterEventHandler(path.c_str());
+    //         ConfigManager::GetInstance()->RemoveHandler(path, false);
+    //         if (ConfigManager::GetInstance()->FindBestMatch(path).first == NULL) {
+    //             continue;
+    //         }
+    //     }
+    //     CheckPointManager::Instance()->AddDirCheckPoint(path);
+    // }
     LOG_INFO(sLogger, ("save log reader status", "succeeded"));
 }
 
@@ -985,20 +1115,34 @@ void EventDispatcher::ProcessHandlerTimeOut() {
     return;
 }
 
+void EventDispatcher::UpdateFileInfoMap() {
+    MapType<int, DirInfo*>::Type::iterator mapIter = mWdDirInfoMap.begin();
+    for (; mapIter != mWdDirInfoMap.end(); ++mapIter) {
+        mapIter->second->mHandler->UpdateFileInfoMap(mapIter->second->mPath);
+    }
+    return;
+}
+
 void EventDispatcher::DumpCheckPointPeriod(int32_t curTime) {
-    if (CheckPointManager::Instance()->NeedDump(curTime)) {
+    if (CheckPointManagerV3::Instance()->NeedDump(curTime)) {
         LOG_INFO(sLogger, ("checkpoint dump", "starts"));
         FileServer::GetInstance()->Pause(false);
         DumpAllHandlersMeta(false);
 
-        if (!(CheckPointManager::Instance()->DumpCheckPointToLocal()))
+        if (!(CheckPointManagerV3::Instance()->DumpCheckPointToLocal()))
             LOG_WARNING(sLogger, ("dump checkpoint to local", "failed"));
         else
             LOG_DEBUG(sLogger, ("dump checkpoint to local", "succeeded"));
         // after save checkpoint, we should clear all checkpoint
-        CheckPointManager::Instance()->RemoveAllCheckPoint();
+        CheckPointManagerV3::Instance()->RemoveAllCheckPoint();
         FileServer::GetInstance()->Resume(false);
         LOG_INFO(sLogger, ("checkpoint dump", "succeeded"));
+    } else {
+        static time_t last_update_file_info_map_time = 0;
+        if (curTime - last_update_file_info_map_time > INT32_FLAG(update_file_info_interval)) {
+            UpdateFileInfoMap();
+            last_update_file_info_map_time = curTime;
+        }
     }
 }
 

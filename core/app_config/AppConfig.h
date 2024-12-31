@@ -295,6 +295,7 @@ public:
     void SetMaxMultiConfigSize(int32_t maxSize) { mMaxMultiConfigSize = maxSize; }
 
     const std::string& GetCheckPointFilePath() const { return mCheckPointFilePath; }
+    void SetCheckPointFilePath(const std::string & path) { mCheckPointFilePath = path; }
 
     bool IsInputFlowControl() const { return mInputFlowControl; }
 

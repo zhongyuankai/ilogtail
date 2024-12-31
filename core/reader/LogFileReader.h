@@ -128,6 +128,7 @@ public:
     void SetTopicName(const std::string& topic) { mTopicName = topic; }
 
     FileCompareResult CompareToFile(const std::string& filePath);
+    FileCompareResult CompareToFileV3(const std::string& filePath);
 
     virtual int32_t
     RemoveLastIncompleteLog(char* buffer, int32_t size, int32_t& rollbackLineFeedCount, bool allowRollback = true);
@@ -221,6 +222,7 @@ public:
     bool CheckDevInode();
 
     bool CheckFileSignatureAndOffset(bool isOpenOnUpdate);
+    bool CheckFileSignatureAndOffsetV3(bool isOpenOnUpdate);
 
     void UpdateLogPath(const std::string& filePath) {
         if (mHostLogPath == filePath) {
@@ -297,6 +299,7 @@ public:
                                    const std::string& logPath = "");
 
     bool IsFromCheckPoint() { return mLastFileSignatureHash != 0 && mLastFileSignatureSize > (size_t)0; }
+    bool IsFromCheckPointV3() { return !mFileHeadMd5.empty(); }
 
     // void SetDelayAlarmBytes(int64_t value) { mReadDelayAlarmBytes = value; }
 
@@ -357,6 +360,9 @@ public:
     const std::string& GetLogstore() const { return mLogstore; }
     const std::string& GetRegion() const { return mRegion; }
     const std::string& GetConfigName() const { return mConfigName; }
+    const std::string& GetLogMod4PathKey() const { return mLogMod4PathKey; }
+    int32_t GetLogId() const { return mLogId; }
+    int32_t GetPathId() const { return mPathId; }
 
     int64_t GetLogGroupKey() const { return mLogGroupKey; }
 
@@ -398,6 +404,7 @@ protected:
     // int32_t mTailLimit; // KB
     uint64_t mLastFileSignatureHash = 0;
     uint32_t mLastFileSignatureSize = 0;
+    std::string mFileHeadMd5;
     int64_t mLastFilePos = 0; // pos read and consumed, used for next read begin
     int64_t mLastFileSize = 0;
     time_t mLastMTime = 0;
@@ -457,8 +464,11 @@ protected:
     // should be copied explicitly from context.
     std::string mProject;
     std::string mLogstore;
-    std::string mConfigName;
     std::string mRegion;
+    std::string mConfigName;
+    std::string mLogMod4PathKey;
+    int32_t mLogId = -1;
+    int32_t mPathId = -1;
 
 private:
     // Initialized when the exactly once feature is enabled.

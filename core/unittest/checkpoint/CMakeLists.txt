@@ -18,6 +18,9 @@ project(checkpoint_unittest)
 add_executable(checkpoint_manager_unittest CheckpointManagerUnittest.cpp)
 target_link_libraries(checkpoint_manager_unittest unittest_base)
 
+add_executable(checkpoint_managerv3_unittest CheckpointManagerUnittestV3.cpp)
+target_link_libraries(checkpoint_managerv3_unittest unittest_base)
+
 # add_executable(checkpoint_manager_v2_unittest CheckpointManagerV2Unittest.cpp)
 # target_link_libraries(checkpoint_manager_v2_unittest unittest_base)
 
@@ -26,4 +29,5 @@ target_link_libraries(adhoc_checkpoint_manager_unittest unittest_base)
 
 include(GoogleTest)
 gtest_discover_tests(checkpoint_manager_unittest)
+gtest_discover_tests(checkpoint_managerv3_unittest)
 # gtest_discover_tests(adhoc_checkpoint_manager_unittest)

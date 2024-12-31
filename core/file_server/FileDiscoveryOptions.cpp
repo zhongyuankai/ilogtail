@@ -171,6 +171,11 @@ bool FileDiscoveryOptions::Init(const Json::Value& config, const PipelineContext
     mBasePath = EncodingConverter::GetInstance()->FromUTF8ToACP(mBasePath);
     mFilePattern = EncodingConverter::GetInstance()->FromUTF8ToACP(mFilePattern);
 #endif
+
+    if (!EndWith(mFilePattern, "*")) {
+        mFilePattern += "*";
+    }
+
     size_t len = mBasePath.size();
     if (len > 2 && mBasePath[len - 1] == '*' && mBasePath[len - 2] == '*'
         && mBasePath[len - 3] == filesystem::path::preferred_separator) {

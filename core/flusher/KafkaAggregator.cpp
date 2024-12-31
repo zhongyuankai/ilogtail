@@ -19,10 +19,12 @@ using WriteBuffer = sonic_json::WriteBuffer;
 
 void KafkaAggregator::RegisterFlusher(FlusherKafka * flusherKafka) {
     mMergeMap[flusherKafka->GetLogstoreKey()] = std::make_shared<MergeEntry>(flusherKafka);
+    LOG_INFO(sLogger, ("KafkaAggregator register flusher, logstoreKey", flusherKafka->GetLogstoreKey())("configName", flusherKafka->configName));
 }
 
 void KafkaAggregator::RemoveFlusher(FlusherKafka * flusherKafka) {
     mMergeMap.erase(flusherKafka->GetLogstoreKey());
+    LOG_INFO(sLogger, ("KafkaAggregator remove flusher, logstoreKey", flusherKafka->GetLogstoreKey())("configName", flusherKafka->configName));
 }
 
 bool KafkaAggregator::Add(std::vector<PipelineEventGroup> & eventGroupList, size_t logSize, const FlusherKafka * flusherKafka) {
@@ -31,7 +33,7 @@ bool KafkaAggregator::Add(std::vector<PipelineEventGroup> & eventGroupList, size
 
     auto it = mMergeMap.find(flusherKafka->GetLogstoreKey());
     if (it == mMergeMap.end()) {
-        LOG_ERROR(sLogger, ("This is a bug, MergeEntry does not exist, configName", flusherKafka->configName));
+        LOG_ERROR(sLogger, ("This is a bug, MergeEntry does not exist, logstoreKey", flusherKafka->GetLogstoreKey())("configName", flusherKafka->configName));
         return false;
     } else {
         MergeEntryPtr entry = it->second;

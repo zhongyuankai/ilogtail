@@ -88,6 +88,11 @@ public:
     const Logger::logger& GetLogger() const { return mLogger; }
     LogtailAlarm& GetAlarm() const { return *mAlarm; };
 
+    void SetLogMod4PathKey(const std::string & path, bool isCollectContainer);
+    const std::string & GetLogMod4PathKey() const { return mLogMod4PathKey; };
+    int32_t GetLogId() const { return mLogId; };
+    int32_t GetPathId() const { return mPathId; };
+
 private:
     static const std::string sEmptyString;
 
@@ -106,6 +111,10 @@ private:
     // LogFileProfiler* mProfiler = LogFileProfiler::GetInstance();
     Logger::logger mLogger = sLogger;
     LogtailAlarm* mAlarm = LogtailAlarm::GetInstance();
+
+    std::string mLogMod4PathKey;
+    int32_t mLogId;
+    int32_t mPathId;
 };
 
 } // namespace logtail

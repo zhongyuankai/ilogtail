@@ -203,7 +203,7 @@ function version() {
 
 function running_version() {
     local version=$(getLogtailVersion)
-    echo "version: $version"
+    echo "running version: ilogtail $version"
 }
 
 function get_pid() {

@@ -17,6 +17,7 @@
 #include "FileSystemUtil.h"
 #include "murmurhash3.h"
 #include "LogFileOperator.h"
+#include "common/LogFileUtils.h"
 
 namespace logtail {
 
@@ -332,6 +333,24 @@ bool CheckAndUpdateSignature(const std::string& signature, uint64_t& sigHash, ui
         sigHash = newSigHash;
     }
     return rst;
+}
+
+bool CheckAndUpdateSignatureV3(const std::string & signature, std::string & oldSignature) {
+    if (oldSignature.empty()) {
+        oldSignature = getMd5(signature);
+        return true;
+    }
+    if (signature.empty()) {
+        oldSignature = "Failed";
+        return false;
+    }
+    std::string sig = getMd5(signature);
+    if (sig == oldSignature && sig != "Failed") {
+        oldSignature = sig;
+        return true;
+    }
+    oldSignature = sig;
+    return false;
 }
 
 bool CheckFileSignature(const std::string& filePath, uint64_t sigHash, uint32_t sigSize, bool fuseMode) {
