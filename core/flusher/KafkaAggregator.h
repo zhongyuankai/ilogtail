@@ -50,6 +50,7 @@ public:
     }
 
     bool FlushReadyBuffer();
+    bool IsMergeMapEmpty(int64_t kafkaProducerKey);
     bool IsMergeMapEmpty();
 
     void RegisterFlusher(FlusherKafka * flusherKafka);
@@ -63,7 +64,7 @@ private:
     KafkaAggregator() = default;
     ~KafkaAggregator() = default;
 
-    bool SendData(std::vector<PipelineEventGroup> & eventGroupList, MergeEntryPtr entry);
+    bool SendData(std::vector<PipelineEventGroup> & eventGroupList, MergeEntryPtr & entry);
 
     std::unordered_map<LogstoreFeedBackKey, MergeEntryPtr> mMergeMap;
 };

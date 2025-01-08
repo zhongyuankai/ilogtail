@@ -9,6 +9,7 @@ namespace logtail {
 
 class FlusherKafka : public Flusher {
 friend class KafkaAggregator;
+friend class KafkaSender;
 public:
     static const std::string sName;
 
@@ -19,7 +20,8 @@ public:
     bool Start() override;
     bool Stop(bool isPipelineRemoving) override;
 
-    LogstoreFeedBackKey GetLogstoreKey() const { return logstoreKey; }
+    const LogstoreFeedBackKey & GetLogstoreKey() const { return logstoreKey; }
+    int64_t GetKafkaProducerkey() const { return kafkaProducerKey; }
 
 private:
 
@@ -31,17 +33,16 @@ private:
     std::string hostName;
 	std::string originalAppName;
 	std::string odinLeaf;
-	int32_t logId;
+	int32_t logId = -1;
 	std::string appName;
 	std::string queryFrom;
-	int32_t isService;
+	int32_t isService = 0;
 	std::string DIDIENV_ODIN_SU;
-	int32_t pathId;
+	int32_t pathId = -1;
 
     LogstoreFeedBackKey logstoreKey = 0;
+    int64_t kafkaProducerKey = 0;
     std::string configName;
-
-    int64_t kafkaProducerKey;
 };
 
 } // namespace logtail

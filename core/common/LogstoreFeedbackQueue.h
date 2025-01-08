@@ -15,6 +15,7 @@
  */
 
 #pragma once
+#include <memory>
 #include <unordered_map>
 #include <string>
 #include <stdlib.h>
@@ -28,6 +29,12 @@
 
 namespace logtail {
 
+struct FeedBackStatus {
+    bool mSendValidFlag = true;
+};
+
+using FeedBackStatusPtr = std::shared_ptr<FeedBackStatus>;
+
 class LogstoreFeedBackInterface {
 public:
     LogstoreFeedBackInterface() {}
@@ -35,7 +42,7 @@ public:
 
     virtual void FeedBack(const LogstoreFeedBackKey& key) = 0;
 
-    virtual bool IsValidToPush(const LogstoreFeedBackKey& key) = 0;
+    virtual bool IsValidToPush(const LogstoreFeedBackKey& key, FeedBackStatusPtr status = nullptr) = 0;
 };
 
 class TriggerEvent {
@@ -74,7 +81,7 @@ protected:
 template <class TT, class PARAM>
 class SingleLogstoreFeedbackQueue {
 public:
-    SingleLogstoreFeedbackQueue() : mArray(NULL), mType(QueueType::Normal) {
+    SingleLogstoreFeedbackQueue() : mArray(NULL), mType(QueueType::Normal), mStatus(std::make_shared<FeedBackStatus>()) {
         ResetParam(PARAM::GetInstance()->GetLowSize(),
                    PARAM::GetInstance()->GetHighSize(),
                    PARAM::GetInstance()->GetMaxSize());
@@ -108,9 +115,20 @@ public:
     void Reset() {
         mValid = true;
         mWrite = mRead = mSize = 0;
+        if (mStatus) {
+            mStatus->mSendValidFlag = true;
+        }
     }
 
-    bool IsValid() const { return mValid; }
+    virtual bool IsValid() const {
+        if (IsEmpty()) {
+            return true;
+        }
+        if (!mStatus->mSendValidFlag) {
+            return false;
+        }
+        return mValid;
+    }
 
     bool IsEmpty() const { return mSize == 0; }
 
@@ -155,6 +173,8 @@ public:
 
     QueueType GetQueueType() const { return mType; }
 
+    FeedBackStatusPtr GetFeedBackStatus() const { return mStatus; }
+
 protected:
     size_t LOW_SIZE;
     size_t HIGH_SIZE;
@@ -166,6 +186,8 @@ protected:
     volatile uint64_t mRead;
     volatile size_t mSize;
     volatile QueueType mType;
+
+    FeedBackStatusPtr mStatus;
 
 #ifdef APSARA_UNIT_TEST_MAIN
     friend class QueueManagerUnittest;
@@ -390,6 +412,10 @@ public:
                 for (LogstoreFeedBackQueueVectorIterator iter = mPriorityQueueArray[i].begin();
                      iter != mPriorityQueueArray[i].end();
                      ++iter) {
+                    if (iter->mQueue->IsEmpty()) {
+                        continue;
+                    }
+                    
                     if (!CanPopItem(threadNo, threadNum, pCheckObj, iter->mKey, *(iter->mQueue))) {
                         continue;
                     }
@@ -416,6 +442,9 @@ public:
 
             // Range: the key of last poped item -> end.
             for (auto iter = startKeyIter; iter != mLogstoreQueueMap.end(); ++iter) {
+                if (iter->second.IsEmpty()) {
+                    continue;
+                }
                 if (!CanPopItem(threadNo, threadNum, pCheckObj, iter->first, iter->second)) {
                     continue;
                 }
@@ -434,6 +463,9 @@ public:
 
             // Range: begin -> the key of last poped item.
             for (auto iter = mLogstoreQueueMap.begin(); iter != startKeyIter; ++iter) {
+                if (iter->second.IsEmpty()) {
+                    continue;
+                }
                 if (!CanPopItem(threadNo, threadNum, pCheckObj, iter->first, iter->second)) {
                     continue;
                 }
@@ -471,7 +503,7 @@ public:
 
     virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
 
-    virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
+    virtual bool IsValidToPush(const LogstoreFeedBackKey& key, FeedBackStatusPtr status = nullptr) {
         PTScopedLock dataLock(mLock);
         if (mQueueSize > mMaxQueueSize) {
             return false;
@@ -564,7 +596,7 @@ private:
         if (queue.GetQueueType() == QueueType::ExactlyOnce && (key % threadNum != threadNo)) {
             return false;
         }
-        return checkObj->IsValidToPush(key);
+        return checkObj->IsValidToPush(key, queue.GetFeedBackStatus());
     }
 
 #ifdef APSARA_UNIT_TEST_MAIN

@@ -45,6 +45,7 @@
 #include "plugin/PluginRegistry.h"
 #include "processor/daemon/LogProcess.h"
 #include "flusher/KafkaSender.h"
+#include "checkpoint/CheckPointManagerV3.h"
 #ifdef __ENTERPRISE__
 #include "config/provider/EnterpriseConfigProvider.h"
 #include "config/provider/LegacyConfigProvider.h"
@@ -64,7 +65,7 @@ DEFINE_FLAG_INT32(file_tags_update_interval, "second", 1);
 DEFINE_FLAG_INT32(config_scan_interval, "seconds", 10);
 DEFINE_FLAG_INT32(profiling_check_interval, "seconds", 60);
 DEFINE_FLAG_INT32(tcmalloc_release_memory_interval, "force release memory held by tcmalloc, seconds", 300);
-DEFINE_FLAG_INT32(exit_flushout_duration, "exit process flushout duration", 30 * 1000);
+DEFINE_FLAG_INT32(exit_flushout_duration, "exit process flushout duration", 60 * 1000);
 
 DECLARE_FLAG_BOOL(send_prefer_real_ip);
 DECLARE_FLAG_BOOL(global_network_success);
@@ -341,6 +342,16 @@ void Application::Exit() {
 
     PipelineManager::GetInstance()->StopAllPipelines();
 
+    if (!(KafkaSender::Instance()->FlushOut(INT32_FLAG(exit_flushout_duration)))) {
+        LOG_WARNING(sLogger, ("flush Kafka sender data", "failed"));
+    } else {
+        LOG_INFO(sLogger, ("flush kafka sender data", "succeeded"));
+    }
+
+    EventDispatcher::GetInstance()->RollbackSendErrorOffset();
+    EventDispatcher::GetInstance()->DumpAllHandlersMeta(false);
+    CheckPointManagerV3::Instance()->DumpCheckPointToLocal();
+
     PluginRegistry::GetInstance()->UnloadPlugins();
 
 #ifdef __ENTERPRISE__
@@ -353,12 +364,6 @@ void Application::Exit() {
     LogtailMonitor::GetInstance()->Stop();
     // LogtailAlarm::GetInstance()->Stop();
     // from now on, alarm should not be used.
-
-    if (!(KafkaSender::Instance()->FlushOut(INT32_FLAG(exit_flushout_duration)))) {
-        LOG_WARNING(sLogger, ("flush SLS sender data", "failed"));
-    } else {
-        LOG_INFO(sLogger, ("flush SLS sender data", "succeeded"));
-    }
 
     removeStatusFile();
 

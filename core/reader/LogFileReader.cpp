@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "LogFileReader.h"
+#include "StringTools.h"
 
 #if defined(_MSC_VER)
 #include <fcntl.h>
@@ -125,7 +126,7 @@ LogFileReader* LogFileReader::CreateLogFileReader(const string& hostLogPathDir,
         if (readerConfig.first->mAppendingLogPositionMeta) {
             sls_logs::LogTag inodeTag;
             inodeTag.set_key(LOG_RESERVED_KEY_INODE);
-            inodeTag.set_value(std::to_string(devInode.inode));
+            inodeTag.set_value(devInode.ToString());
             reader->AddExtraTags(std::vector<sls_logs::LogTag>{inodeTag});
         }
 
@@ -234,7 +235,7 @@ void LogFileReader::DumpMetaToMem(bool checkConfigFlag, int32_t idxInReaderArray
                                                mDevInode,
                                                GetLogMod4PathKey(),
                                                GetConfigName(),
-                                               ToString(mDevInode.dev) + "_" + ToString(mDevInode.inode),
+                                               mDevInode.ToString(),
                                                mRealLogPath,
                                                mLastEventTime,
                                                mLogId,
@@ -242,6 +243,23 @@ void LogFileReader::DumpMetaToMem(bool checkConfigFlag, int32_t idxInReaderArray
     checkPointPtr->mIdxInReaderArray = idxInReaderArray;
 
     CheckPointManagerV3::Instance()->AddCheckPoint(checkPointPtr);
+}
+
+void LogFileReader::RollbackSendErrorOffset(LoggroupOffsetMap & fileOffsets) {
+    auto it = fileOffsets.find({GetLogstoreKey(), mDevInode.ToString(), mFileHeadMd5});
+    if (it == fileOffsets.end()) {
+        return;
+    }
+
+    LOG_INFO(sLogger, ("rollback send error offset, config", GetConfigName())("log reader queue name", mRealLogPath)(
+        "file device",ToString(mDevInode.dev))("file inode", ToString(mDevInode.inode))("file signature", mFileHeadMd5)(
+            "before file position", mLastFilePos)("after file position", it->second));
+
+    mLastFilePos = it->second;
+    mCache.clear();
+    fileOffsets.erase(it);
+
+    LogInput::GetInstance()->PushEventQueue(new Event(mHostLogPathDir, mHostLogPathFile, EVENT_MODIFY, -1, 0, mDevInode.dev, mDevInode.inode));
 }
 
 void LogFileReader::SetFileDeleted(bool flag) {

@@ -40,7 +40,7 @@ public:
                           int32_t curTime);
     void GetTimeoutEvent(std::vector<Event*>& eventVec, int32_t curTime);
     virtual void FeedBack(const LogstoreFeedBackKey& key);
-    virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
+    virtual bool IsValidToPush(const LogstoreFeedBackKey& key, FeedBackStatusPtr status = nullptr) {
         // should not be used
         return true;
     }

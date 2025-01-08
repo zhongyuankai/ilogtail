@@ -81,7 +81,7 @@ public:
     bool IsFirstProcessorApsara() const { return mIsFirstProcessorApsara; }
     void SetIsFirstProcessorApsaraFlag(bool flag) { mIsFirstProcessorApsara = flag; }
 
-    void SetFlusherKafka(const FlusherKafka * flusherKafka) { mFlusherKafka = flusherKafka; }
+    void SetFlusherKafka(const FlusherKafka * flusherKafka);
 
     ProcessProfile& GetProcessProfile() const { return mProcessProfile; }
     // LogFileProfiler& GetProfiler() { return *mProfiler; }
@@ -106,6 +106,8 @@ private:
     bool mIsFirstProcessorApsara = false;
 
     const FlusherKafka * mFlusherKafka = nullptr;
+
+    LogstoreFeedBackKey mKey = -1;
 
     mutable ProcessProfile mProcessProfile;
     // LogFileProfiler* mProfiler = LogFileProfiler::GetInstance();

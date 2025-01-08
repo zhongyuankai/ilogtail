@@ -37,6 +37,7 @@
 #include "log_pb/sls_logs.pb.h"
 #include "logger/Logger.h"
 #include "reader/FileReaderOptions.h"
+#include "flusher/LoggroupOffsetMap.h"
 
 namespace logtail {
 
@@ -165,6 +166,8 @@ public:
 
     int64_t GetLastFilePos() const { return mLastFilePos; }
 
+    const std::string & GetFileHeadMd5() const { return mFileHeadMd5; }
+
     int32_t GetIdxInReaderArrayFromLastCpt() const { return mIdxInReaderArrayFromLastCpt; }
 
     void SetIdxInReaderArrayFromLastCpt(int32_t idx) { mIdxInReaderArrayFromLastCpt = idx; }
@@ -189,6 +192,8 @@ public:
     InitReader(bool tailExisted = false, FileReadPolicy policy = BACKWARD_TO_FIXED_POS, uint32_t eoConcurrency = 0);
 
     void DumpMetaToMem(bool checkConfigFlag = false, int32_t idxInReaderArray = CHECKPOINT_IDX_OF_NEW_READER_IN_ARRAY);
+
+    void RollbackSendErrorOffset(LoggroupOffsetMap & fileOffsets);
 
     std::string GetSourceId() { return mSourceId; }
 

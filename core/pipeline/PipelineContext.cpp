@@ -38,13 +38,20 @@ const string& PipelineContext::GetRegion() const {
 }
 
 LogstoreFeedBackKey PipelineContext::GetLogstoreKey() const {
-    if (mFlusherKafka) {
-        return mFlusherKafka->GetLogstoreKey();
-    } else if (mSLSInfo) {
-        return mSLSInfo->GetLogstoreKey();
+    if (mKey != -1) {
+        return mKey;
     }
-    static LogstoreFeedBackKey key = GenerateLogstoreFeedBackKey(sEmptyString, sEmptyString);
-    return key;
+    if (mSLSInfo) {
+        return mSLSInfo->GetLogstoreKey();
+    } else {
+        static LogstoreFeedBackKey key = GenerateLogstoreFeedBackKey(sEmptyString, sEmptyString);
+        return key;
+    }
+}
+
+void PipelineContext::SetFlusherKafka(const FlusherKafka * flusherKafka) {
+    mFlusherKafka = flusherKafka; 
+    mKey = flusherKafka->GetLogstoreKey();
 }
 
 void PipelineContext::SetLogMod4PathKey(const std::string & path, bool isCollectContainer) {

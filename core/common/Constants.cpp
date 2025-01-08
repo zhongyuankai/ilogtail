@@ -33,6 +33,7 @@ const std::string LOG_RESERVED_KEY_TRUNCATE_INFO = "__truncate_info__";
 // const std::string LOG_RESERVED_KEY_ALIPAY_ZONE = "__alipay_zone__";
 const std::string LOG_RESERVED_KEY_INODE = "__inode__";
 const std::string LOG_RESERVED_KEY_FILE_OFFSET = "__file_offset__";
+const std::string LOG_RESERVED_KEY_FILE_HEAD_MD5 = "__file_head_md5__";
 
 const char* SLS_EMPTY_STR_FOR_INDEX = "\01";
 

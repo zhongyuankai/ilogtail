@@ -85,8 +85,7 @@ void CheckPointManagerV3::AddCheckPoint(const CheckPointPtr & checkPointPtr) {
 void CheckPointManagerV3::DeleteCheckPoint(DevInode devInode, const std::string& logMode4Path) {
     if (auto it = mOffsetMap.find(logMode4Path); it != mOffsetMap.end()) {
         auto & fileKeyMap = it->second;
-        std::string fileKey = ToString(devInode.dev) + "_" + ToString(devInode.inode);
-        if (auto fileKeyIter = fileKeyMap.find(fileKey); fileKeyIter != fileKeyMap.end()) {
+        if (auto fileKeyIter = fileKeyMap.find(devInode.ToString()); fileKeyIter != fileKeyMap.end()) {
             fileKeyMap.erase(fileKeyIter);
         }
         if (fileKeyMap.empty()) {
@@ -98,8 +97,7 @@ void CheckPointManagerV3::DeleteCheckPoint(DevInode devInode, const std::string&
 bool CheckPointManagerV3::GetCheckPoint(DevInode devInode, const std::string & logMode4Path, CheckPointPtr & checkPointPtr) {
     if (auto it = mOffsetMap.find(logMode4Path); it != mOffsetMap.end()) {
         auto & fileKeyMap = it->second;
-        std::string fileKey = ToString(devInode.dev) + "_" + ToString(devInode.inode);
-        if (auto fileKeyIter = fileKeyMap.find(fileKey); fileKeyIter != fileKeyMap.end()) {
+        if (auto fileKeyIter = fileKeyMap.find(devInode.ToString()); fileKeyIter != fileKeyMap.end()) {
             checkPointPtr = fileKeyIter->second;
             return true;
         }
@@ -232,6 +230,7 @@ bool CheckPointManagerV3::DumpCheckPointToLocal() {
                         // 过滤掉2周之前的offset信息,防止offset暴增无法清理
                         continue;
                     }
+
                     Json::Value node;
                     node[LOGID_STR] = checkPoint->mLogID;
                     node[PATHID_STR] = checkPoint->mPathID;

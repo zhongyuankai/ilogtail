@@ -22,6 +22,7 @@
 #include <unordered_map>
 
 #include "reader/LogFileReader.h"
+#include "flusher/LoggroupOffsetMap.h"
 
 namespace logtail {
 
@@ -39,6 +40,7 @@ public:
     virtual void Handle(const Event& event) = 0;
     virtual void HandleTimeOut() = 0;
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag) = 0;
+    virtual void RollbackSendErrorOffset(bool isRotatorReader, LoggroupOffsetMap & fileOffsets) {}
     virtual bool IsAllFileRead() { return true; }
     virtual void UpdateFileInfoMap(const std::string & path) {}
     virtual ~EventHandler() {}
@@ -121,6 +123,8 @@ public:
     virtual void Handle(const Event& event);
     virtual void HandleTimeOut();
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag);
+    virtual void RollbackSendErrorOffset(bool isRotatorReader, LoggroupOffsetMap & fileOffsets);
+
     virtual void UpdateFileInfoMap(const std::string & path);
     bool IsAllFileRead() override;
 
@@ -176,6 +180,7 @@ public:
     virtual void Handle(const Event& event);
     virtual void HandleTimeOut();
     virtual bool DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag);
+    virtual void RollbackSendErrorOffset(bool isRotatorReader, LoggroupOffsetMap & fileOffsets);
     virtual void UpdateFileInfoMap(const std::string & path);
     bool IsAllFileRead() override;
 

@@ -99,8 +99,8 @@ void FileServer::Resume(bool isConfigUpdate) {
 
 void FileServer::Stop() {
     PauseInner();
-    EventDispatcher::GetInstance()->DumpAllHandlersMeta(false);
-    CheckPointManagerV3::Instance()->DumpCheckPointToLocal();
+    // EventDispatcher::GetInstance()->DumpAllHandlersMeta(false);
+    // CheckPointManagerV3::Instance()->DumpCheckPointToLocal();
 }
 
 FileDiscoveryConfig FileServer::GetFileDiscoveryConfig(const string& name) const {

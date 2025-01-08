@@ -19,9 +19,18 @@ DEFINE_FLAG_INT32(kafka_send_queue_buffering_max_ms, "kafka producer parameter."
 namespace logtail {
 
 void KafkaSenderCallback::dr_cb(RdKafka::Message & message) {
+    if (!message.msg_opaque()) {
+        return;
+    }
+    LoggroupEntry * data = static_cast<LoggroupEntry *>(message.msg_opaque());
     if (message.err()) {
-        LOG_ERROR(sLogger, ("Message delivery failed", message.errstr())("topic", message.topic_name())("len", message.len()));
+        LOG_ERROR(sLogger, ("kafka message delivery failed", message.errstr())("topic", message.topic_name())(
+            "len", message.len())("kafkaProducerKey", data->mKafkaProducerKey)("logstoreKey", data->mLogstoreKey)(
+            "offset", data->ConvertFileOffsetToString()));
+        KafkaSender::Instance()->OnSendDone(data, KafkaSendInfo::SendResult_SendFail);
         ++mSendFailedCount;
+    } else {
+        KafkaSender::Instance()->OnSendDone(data, KafkaSendInfo::SendResult_OK);
     }
 }
 
@@ -36,7 +45,7 @@ KafkaSender::KafkaSender() {
     mSenderQueue.SetParam((size_t)(concurrencyCount * 1.5), (size_t)(concurrencyCount * 2), 200);
     size_t maxQueueSize = (size_t)AppConfig::GetInstance()->GetSendMaxQueueSize();
     mSenderQueue.SetMaxQueueSize(maxQueueSize);
-    LOG_INFO(sLogger, ("Set sender queue param depend value", concurrencyCount));
+    LOG_INFO(sLogger, ("Set kafka sender queue param depend value", concurrencyCount));
 }
 
 KafkaSender* KafkaSender::Instance() {
@@ -82,7 +91,7 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
     }
 
     LOG_INFO(sLogger, ("Kafka SendThread", "start")("ThreaNo", threadNo)("KafkaProducerKey", kafkaProducerKey));
-    std::vector<LoggroupEntry*> logGroupToSend;
+    std::vector<LoggroupEntry *> logGroupToSend;
     while (true) {
         int32_t curTime = time(NULL);
         if (curTime - lastUpdateMetricTime >= 40) {
@@ -91,7 +100,7 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
                 continue;
             }
 
-            static auto sMonitor = LogtailMonitor::GetInstance();
+            static LogtailMonitor * sMonitor = LogtailMonitor::GetInstance();
 
             sMonitor->UpdateMetric("send_tps", 1.0 * mSendBufferCount.load() / (curTime - lastUpdateMetricTime));
             sMonitor->UpdateMetric("send_bytes_ps", 1.0 * mSendBufferBytes.load() / (curTime - lastUpdateMetricTime));
@@ -131,9 +140,11 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
 
         mSenderQueue.Wait(kafkaProducerKey, 1000);
 
-        bool singleBatchMapFull = false;
-
-        mSenderQueue.PopItemByKafkaProducerKey(logGroupToSend, kafkaProducerKey);
+        if (Application::GetInstance()->IsExiting() || threadFlags->mInteruptFlag || threadFlags->mFlushLog) {
+            mSenderQueue.PopAllItemByKafkaProducerKey(logGroupToSend, kafkaProducerKey, curTime);
+        } else {
+            mSenderQueue.CheckAndPopAllItemByKafkaProducerKey(logGroupToSend, kafkaProducerKey, curTime);
+        }
 
         mSendBufferCount += logGroupToSend.size();
         size_t sendBufferBytes = 0;
@@ -141,39 +152,51 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
         size_t sendErrorCount = 0;
         size_t sendErrorQueueFullCount = 0;
         uint64_t startTime = GetCurrentTimeInMilliSeconds();
-        for (std::vector<LoggroupEntry*>::iterator itr = logGroupToSend.begin(); itr != logGroupToSend.end(); ++itr) {
+        for (std::vector<LoggroupEntry *>::iterator itr = logGroupToSend.begin(); itr != logGroupToSend.end(); ++itr) {
             LoggroupEntry * data = *itr;
 
-            while (true)
+            KafkaSendInfo::SendResult sendRst = KafkaSendInfo::SendResult_Sending;
+            mSenderQueue.OnLoggroupSendDone(data, sendRst);
             {
-                RdKafka::ErrorCode err = producer->produce(
-                    data->mTopic,
-                    RdKafka::Topic::PARTITION_UA,
-                    RdKafka::Producer::RK_MSG_COPY, /* Copy payload */
-                    const_cast<char *>(data->mLogData.ToString()), data->mLogData.Size(),    /* Value */
-                    NULL, 0,    /* Key */
-                    0,  /* Timestamp (defaults to current time) */ 
-                    NULL,   /* Message headers, if any */
-                    NULL    /* Per-message opaque value passed to delivery report */
-                );
+                WriteBufferPtr logData = std::move(data->mLogData);
 
-                if (err == RdKafka::ERR__QUEUE_FULL) {
-                    producer->poll(100);   /*block for max 1000ms*/
-                    ++sendErrorQueueFullCount;
-                    continue;
+                while (true)
+                {
+                    RdKafka::ErrorCode err = producer->produce(
+                        data->mTopic,
+                        RdKafka::Topic::PARTITION_UA,
+                        RdKafka::Producer::RK_MSG_COPY, /* Copy payload */
+                        const_cast<char *>(logData->ToString()), logData->Size(),    /* Value */
+                        NULL, 0,    /* Key */
+                        0,  /* Timestamp (defaults to current time) */ 
+                        NULL,   /* Message headers, if any */
+                        data    /* Per-message opaque value passed to delivery report */
+                    );
+
+                    if (err == RdKafka::ERR__QUEUE_FULL) {
+                        producer->poll(100);   /*block for max 1000ms*/
+                        ++sendErrorQueueFullCount;
+                        continue;
+                    }
+
+                    if (err != RdKafka::ERR_NO_ERROR) {
+                        LOG_ERROR(sLogger, ("Failed to send kafka", RdKafka::err2str(err))("log lines", data->mLogLines)("topic", data->mTopic)(
+                            "logstoreKey", data->mLogstoreKey)("offset", data->ConvertFileOffsetToString()));
+                        ++sendErrorCount;
+                        sendRst = KafkaSendInfo::SendResult_OtherFail;
+                    }
+
+                    producer->poll(0);
+                    break;
                 }
 
-                if (err != RdKafka::ERR_NO_ERROR) {
-                    LOG_ERROR(sLogger, ("Failed to send kafka", err));
-                    ++sendErrorCount;
-                }
-                producer->poll(0);
-                break;
+                sendBufferBytes += logData->Size();
+                sendLines += data->mLogLines;
             }
 
-            sendBufferBytes += data->mLogData.Size();
-            sendLines += data->mLogLines;
-            mSenderQueue.RemoveItem(data);
+            if (sendRst == KafkaSendInfo::SendResult_OtherFail) {
+                mSenderQueue.OnLoggroupSendDone(data, sendRst);
+            }
         }
         logGroupToSend.clear();
 
@@ -183,40 +206,32 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
         mSendErrorCount += sendErrorCount;
         mSendErrorQueueFullCount += sendErrorQueueFullCount;
 
-        if (threadFlags->mFlushLog && aggregator->IsMergeMapEmpty() && mSenderQueue.GetSize(kafkaProducerKey) == 0) {
+        if (threadFlags->mFlushLog && aggregator->IsMergeMapEmpty(kafkaProducerKey) && mSenderQueue.GetSize(kafkaProducerKey) == 0) {
             producer->flush(20 * 1000);
 
             ReadWriteBarrier();
             threadFlags->mFlushLog = false;
         }
 
-        if (threadFlags->mInteruptFlag ) {
+        if (threadFlags->mInteruptFlag) {
             LOG_INFO(sLogger, ("Kafka SendThread", "prepare exit")("ThreaNo", threadNo)("KafkaProducerKey", kafkaProducerKey));
-            if (aggregator->IsMergeMapEmpty() && mSenderQueue.GetSize(kafkaProducerKey) == 0) {
+            if (!aggregator->IsMergeMapEmpty(kafkaProducerKey) || mSenderQueue.GetSize(kafkaProducerKey) != 0) {
                 continue;
             }
             producer->flush(20 * 1000);
             break;
         }
 
-        producer->poll(0);
+        producer->poll(10);
     }
 
     if (threadNo == mMetricThreadNo.load()) {
         std::lock_guard<std::mutex> lock(kafkaProducersMutex);
         if (kafkaProducers.empty()) {
-            mMetricThreadNo.store(0);
+            mMetricThreadNo.store(mThreadNo);
         } else {
-            bool store = false;
-            for (auto it = kafkaProducers.begin(); it != kafkaProducers.end(); ++it) {
-                auto & entry = it->second;
-                mMetricThreadNo.store(entry->mThreadNo);
-                store = true;
-                break;
-            }
-            if (!store) {
-                mMetricThreadNo.store(0);
-            }
+            auto & entry = kafkaProducers.begin()->second;
+            mMetricThreadNo.store(entry->mThreadNo);
         }
         LOG_INFO(sLogger, ("Kafka SendThread switch metric thread", mMetricThreadNo.load()));
     }
@@ -232,7 +247,7 @@ bool KafkaSender::PushQueue(LoggroupEntry * data) {
         if (tryTime++ == 0) {
             LOG_WARNING(sLogger,
                         ("Push to sender buffer map fail, try again, data size",
-                         ToString(data->mLogData.Size()))("topic", data->mTopic));
+                         ToString(data->mLogData->Size()))("topic", data->mTopic));
         }
         usleep(10 * 1000);
     }
@@ -244,23 +259,23 @@ bool KafkaSender::PushQueue(LoggroupEntry * data) {
     return false;
 }
 
-bool KafkaSender::CreateKafkaProducer(std::string & brokers, std::string & username, std::string & password) {
-    std::string producerKey = brokers + "_" + username + "_" + password;
-    int64_t hashKey = HashString(producerKey);
-
+bool KafkaSender::CreateKafkaProducer(FlusherKafka * flusherKafka) {
     std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-    auto it = kafkaProducers.find(hashKey);
+
+    int64_t kafkaProducerKey = flusherKafka->kafkaProducerKey;
+    auto it = kafkaProducers.find(kafkaProducerKey);
     if (it != kafkaProducers.end()) {
+        it->second->mTaskCount++;
         return true;
     }
 
     auto conf = std::shared_ptr<RdKafka::Conf>(RdKafka::Conf::create(RdKafka::Conf::CONF_GLOBAL));
     std::vector<std::pair<std::string, std::string>> confs = {
-        { "bootstrap.servers", brokers },
+        { "bootstrap.servers", flusherKafka->brokers },
         { "security.protocol", "SASL_PLAINTEXT" },
         { "sasl.mechanism", "PLAIN" },
-        { "sasl.username", username },
-        { "sasl.password", password },
+        { "sasl.username", flusherKafka->username },
+        { "sasl.password", flusherKafka->password },
         { "compression.codec", "lz4" },
         { "batch.num.messages", ToString(INT32_FLAG(kafka_send_batch_num_messages)) },
         { "message.max.bytes", ToString(INT32_FLAG(kafka_send_message_max_bytes)) },
@@ -290,8 +305,8 @@ bool KafkaSender::CreateKafkaProducer(std::string & brokers, std::string & usern
     }
 
     std::shared_ptr<KafkaProducerEntry> entry = std::make_shared<KafkaProducerEntry>(producer, callback);
-    kafkaProducers.emplace(hashKey, entry);
-    ThreadPtr thread = CreateThread([this, hashKey]() { DaemonSender(hashKey); });
+    kafkaProducers.emplace(kafkaProducerKey, entry);
+    ThreadPtr thread = CreateThread([this, kafkaProducerKey]() { DaemonSender(kafkaProducerKey); });
     entry->setThread(thread, mThreadNo);
     mThreadNo++;
     return true;
@@ -340,7 +355,7 @@ void KafkaSender::ClearKafakProducerThread() {
 }
 
 bool KafkaSender::FlushOut(int32_t time_interval_in_mili_seconds) {
-    static KafkaAggregator* aggregator = KafkaAggregator::GetInstance();
+    static KafkaAggregator * aggregator = KafkaAggregator::GetInstance();
     aggregator->ForceFlushBuffer();
     SetFlush();
     for (int i = 0; i < time_interval_in_mili_seconds / 100; ++i) {
@@ -380,7 +395,7 @@ void KafkaSender::SetFlush() {
             flags.push_back(entry->mThreadFlags);
         }
     }
-    for (const auto flag : flags) {
+    for (const auto & flag : flags) {
         ReadWriteBarrier();
         flag->mFlushLog = true;
     }
@@ -395,7 +410,7 @@ void KafkaSender::ResetFlush() {
             flags.push_back(entry->mThreadFlags);
         }
     }
-    for (const auto flag : flags) {
+    for (const auto & flag : flags) {
         ReadWriteBarrier();
         flag->mFlushLog = false;
     }
@@ -405,4 +420,38 @@ void KafkaSender::SetQueueUrgent() {
     mSenderQueue.SetUrgent();
 }
 
+void KafkaSender::OnSendDone(LoggroupEntry * data, KafkaSendInfo::SendResult sendRst) {
+    mSenderQueue.OnLoggroupSendDone(data, sendRst);
 }
+
+LoggroupOffsetMap KafkaSender::GetSendFailedOffsets() {
+    return mSenderQueue.GetSendFailedOffsets();
+}
+
+bool KafkaSender::RegisterKafkaFlusher(FlusherKafka * flusherKafka) {
+    if (!CreateKafkaProducer(flusherKafka)) {
+        LOG_ERROR(sLogger, ("failed to create kafka producer, configName", flusherKafka->configName)("logstoreKey", flusherKafka->logstoreKey));
+        return false;
+    }
+
+    KafkaAggregator::GetInstance()->RegisterFlusher(flusherKafka);
+    mSenderQueue.CreateKafkaSendQueue(flusherKafka->GetLogstoreKey(), flusherKafka->GetKafkaProducerkey());
+    LOG_INFO(sLogger, ("register kafka flusher successfully, configName", flusherKafka->configName)(
+        "logstoreKey", flusherKafka->logstoreKey)("kafkaProducerKey", flusherKafka->kafkaProducerKey));
+    return true;
+}
+
+void KafkaSender::RemoveKafkaFlusher(FlusherKafka * flusherKafka, bool removeQueue) {
+    RemoveKafkaProducer(flusherKafka->kafkaProducerKey);
+    if (removeQueue) {
+        KafkaAggregator::GetInstance()->RemoveFlusher(flusherKafka);
+    }
+    LOG_INFO(sLogger, ("remove kafka flusher successfully, configName", flusherKafka->configName)(
+        "logstoreKey", flusherKafka->logstoreKey)("kafkaProducerKey", flusherKafka->kafkaProducerKey)("removeQueue", removeQueue));
+}
+
+KafkaSendStatistics KafkaSender::GetSenderStatistics(const LogstoreFeedBackKey & key) {
+    return mSenderQueue.GetSenderStatistics(key);
+}
+
+} // namespace logtail

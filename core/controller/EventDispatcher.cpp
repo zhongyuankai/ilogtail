@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "EventDispatcher.h"
+#include "KafkaSender.h"
 #if defined(__linux__)
 #include <fnmatch.h>
 #include <sys/epoll.h>
@@ -465,7 +466,7 @@ void EventDispatcher::AddExistedFileEventsV3(const char* path, int wd) {
                 LOG_INFO(sLogger, ("generate MODIFY event for the recently updated existing file",
                                 (pathStr, eventVec.back()->GetObject())));
 
-                std::string fileKey = ToString(fileNode.mDevInode.dev) + "_" + ToString(fileNode.mDevInode.inode);
+                std::string fileKey = fileNode.mDevInode.ToString();
                 std::string fileHeadMd5;
                 LogFileOperator logFileOp;
                 logFileOp.Open(item.c_str());
@@ -1080,6 +1081,28 @@ void EventDispatcher::StartTimeCount() {
         itr->second = cur;
     }
 }
+
+void EventDispatcher::RollbackSendErrorOffset() {
+    LoggroupOffsetMap fileOffsets = KafkaSender::Instance()->GetSendFailedOffsets();
+    if (fileOffsets.empty()) {
+        return;
+    }
+
+    MapType<int, DirInfo*>::Type::iterator it;
+    for (it = mWdDirInfoMap.begin(); it != mWdDirInfoMap.end(); ++it) {
+        if (fileOffsets.empty()) {
+            return;
+        }
+        ((it->second)->mHandler)->RollbackSendErrorOffset(true, fileOffsets);
+    }
+
+    for (it = mWdDirInfoMap.begin(); it != mWdDirInfoMap.end(); ++it) {
+        if (fileOffsets.empty()) {
+            return;
+        }
+        ((it->second)->mHandler)->RollbackSendErrorOffset(false, fileOffsets);
+    }
+}
 void EventDispatcher::DumpAllHandlersMeta(bool remove) {
     MapType<int, DirInfo*>::Type::iterator it;
     vector<int> timeout;
@@ -1092,18 +1115,18 @@ void EventDispatcher::DumpAllHandlersMeta(bool remove) {
         if (remove)
             ConfigManager::GetInstance()->AddHandlerToDelete((it->second)->mHandler);
     }
-    // for (size_t i = 0; i < timeout.size(); ++i) {
-    //     int wd = timeout[i];
-    //     string path = mWdDirInfoMap[wd]->mPath;
-    //     if (remove) {
-    //         UnregisterEventHandler(path.c_str());
-    //         ConfigManager::GetInstance()->RemoveHandler(path, false);
-    //         if (ConfigManager::GetInstance()->FindBestMatch(path).first == NULL) {
-    //             continue;
-    //         }
-    //     }
-    //     CheckPointManager::Instance()->AddDirCheckPoint(path);
-    // }
+    for (size_t i = 0; i < timeout.size(); ++i) {
+        int wd = timeout[i];
+        string path = mWdDirInfoMap[wd]->mPath;
+        if (remove) {
+            UnregisterEventHandler(path.c_str());
+            ConfigManager::GetInstance()->RemoveHandler(path, false);
+            // if (ConfigManager::GetInstance()->FindBestMatch(path).first == NULL) {
+            //     continue;
+            // }
+        }
+        // CheckPointManager::Instance()->AddDirCheckPoint(path);
+    }
     LOG_INFO(sLogger, ("save log reader status", "succeeded"));
 }
 
@@ -1118,7 +1141,10 @@ void EventDispatcher::ProcessHandlerTimeOut() {
 void EventDispatcher::UpdateFileInfoMap() {
     MapType<int, DirInfo*>::Type::iterator mapIter = mWdDirInfoMap.begin();
     for (; mapIter != mWdDirInfoMap.end(); ++mapIter) {
-        mapIter->second->mHandler->UpdateFileInfoMap(mapIter->second->mPath);
+        EventHandler * handler = mapIter->second->mHandler;
+        if (handler) {
+            handler->UpdateFileInfoMap(mapIter->second->mPath);
+        }
     }
     return;
 }

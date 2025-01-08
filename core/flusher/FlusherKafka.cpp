@@ -48,17 +48,6 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
                            mContext->GetRegion());
     }
 
-    if (!KafkaSender::Instance()->CreateKafkaProducer(brokers, username, password)) {
-        LOG_ERROR(mContext->GetLogger(), ("failed to create kafka producer, configName", mContext->GetConfigName()));
-        return false;
-    }
-
-    std::string key = brokers + "_" + username + "_" + password;
-    kafkaProducerKey = HashString(key);
-
-    configName = mContext->GetConfigName();
-    logstoreKey = GenerateLogstoreFeedBackKey(configName, "");
-
     if (!GetMandatoryStringParam(config, "Topic", topic, errorMsg)) {
         PARAM_ERROR_RETURN(mContext->GetLogger(),
                            mContext->GetAlarm(),
@@ -114,6 +103,17 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
                            mContext->GetRegion());
     }
 
+    if (!GetMandatoryStringParam(config, "AppName", appName, errorMsg)) {
+        PARAM_ERROR_RETURN(mContext->GetLogger(),
+                           mContext->GetAlarm(),
+                           errorMsg,
+                           sName,
+                           mContext->GetConfigName(),
+                           mContext->GetProjectName(),
+                           mContext->GetLogstoreName(),
+                           mContext->GetRegion());
+    }
+
     if (!GetMandatoryStringParam(config, "QueryFrom", queryFrom, errorMsg)) {
         PARAM_ERROR_RETURN(mContext->GetLogger(),
                            mContext->GetAlarm(),
@@ -157,8 +157,13 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
                            mContext->GetLogstoreName(),
                            mContext->GetRegion());
     }
-    KafkaAggregator::GetInstance()->RegisterFlusher(this);
-    return true;
+
+    std::string key = brokers + "_" + username + "_" + password;
+    kafkaProducerKey = HashString(key);
+    configName = mContext->GetConfigName();
+    logstoreKey = GenerateLogstoreFeedBackKey(configName, "");
+
+    return KafkaSender::Instance()->RegisterKafkaFlusher(this);
 }
 
 bool FlusherKafka::Start() {
@@ -166,8 +171,7 @@ bool FlusherKafka::Start() {
 }
 
 bool FlusherKafka::Stop(bool isPipelineRemoving) {
-    KafkaAggregator::GetInstance()->RemoveFlusher(this);
-    KafkaSender::Instance()->RemoveKafkaProducer(kafkaProducerKey);
+    KafkaSender::Instance()->RemoveKafkaFlusher(this, isPipelineRemoving);
     return true;
 }
 

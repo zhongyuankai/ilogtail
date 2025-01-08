@@ -52,12 +52,16 @@ DEFINE_FLAG_INT32(check_symbolic_link_interval, "seconds", 120);
 DEFINE_FLAG_INT32(check_base_dir_interval, "seconds", 60);
 DEFINE_FLAG_INT32(log_input_thread_wait_interval, "microseconds", 20 * 1000);
 DEFINE_FLAG_INT64(read_fs_events_interval, "microseconds", 20 * 1000);
+DEFINE_FLAG_INT32(read_fs_events_max_queue_size, "queue size", 100);
+DEFINE_FLAG_INT32(read_fs_events_max_interval, "microseconds", 6 * 1000000);
+DEFINE_FLAG_INT32(read_timeout_events_max_interval, "seconds", 6);
 DEFINE_FLAG_INT32(check_handler_timeout_interval, "seconds", 180);
 DEFINE_FLAG_INT32(dump_inotify_watcher_interval, "seconds", 180);
 DEFINE_FLAG_INT32(clear_config_match_interval, "seconds", 600);
 DEFINE_FLAG_INT32(check_block_event_interval, "seconds", 1);
 DEFINE_FLAG_STRING(local_event_data_file_name, "local event data file name", "local_event.json");
 DEFINE_FLAG_INT32(read_local_event_interval, "seconds", 60);
+DEFINE_FLAG_INT32(rollback_send_failed_offst_interval, "seconds", 90);
 DEFINE_FLAG_BOOL(force_close_file_on_container_stopped,
                  "whether close file handler immediately when associate container stopped",
                  false);
@@ -116,8 +120,13 @@ void LogInput::TryReadEvents(bool forceRead) {
         return;
 
     if (!forceRead) {
+        /// 当队列堆积时避免频繁读取
         int64_t curMicroSeconds = GetCurrentTimeInMicroSeconds();
-        if (curMicroSeconds - mLastReadEventMicroSeconds >= INT64_FLAG(read_fs_events_interval))
+        int64_t interval = curMicroSeconds - mLastReadEventMicroSeconds;
+        if (mInotifyEventQueue.size() > INT32_FLAG(read_fs_events_max_queue_size) && interval < INT64_FLAG(read_fs_events_max_interval)) {
+            return;
+        }
+        if (interval >= INT64_FLAG(read_fs_events_interval))
             mLastReadEventMicroSeconds = curMicroSeconds;
         else
             return;
@@ -365,6 +374,7 @@ void* LogInput::ProcessLoop() {
     int32_t lastDumpInotifyWatcherTime = prevTime - rand() % 60;
     int32_t lastForceClearFlag = prevTime - rand() % 60;
     int32_t lastClearConfigCache = prevTime - rand() % 60;
+    time_t lastRollbackSendFailedOffst = prevTime - rand() % 60;
     mLastReadEventMicroSeconds = 0;
     mLastUpdateMetricTime = prevTime - rand() % 60;
     int32_t lastCheckBlockedTime = prevTime;
@@ -391,7 +401,9 @@ void* LogInput::ProcessLoop() {
         curTime = time(NULL);
 
 
-        if (curTime - lastCheckBlockedTime >= INT32_FLAG(check_block_event_interval)) {
+        if ((mInotifyEventQueue.size() < INT32_FLAG(read_fs_events_max_queue_size) ||
+            curTime - lastCheckBlockedTime > INT32_FLAG(read_timeout_events_max_interval)) && 
+                curTime - lastCheckBlockedTime >= INT32_FLAG(check_block_event_interval)) {
             std::vector<Event*> pEventVec;
             pBlockedEventManager->GetTimeoutEvent(pEventVec, curTime);
             if (pEventVec.size() > 0) {
@@ -450,6 +462,11 @@ void* LogInput::ProcessLoop() {
             lastClearConfigCache = curTime;
         }
 
+        if (curTime - lastRollbackSendFailedOffst > INT32_FLAG(rollback_send_failed_offst_interval)) {
+            dispatcher->RollbackSendErrorOffset();
+            lastRollbackSendFailedOffst = curTime;
+        }
+
         if (BOOL_FLAG(enable_full_drain_mode) && Application::GetInstance()->IsExiting()
             && EventDispatcher::GetInstance()->IsAllFileRead()) {
             break;
@@ -466,8 +483,9 @@ void* LogInput::ProcessLoop() {
 }
 
 void LogInput::PushEventQueue(std::vector<Event*>& eventVec) {
+    string key;
     for (std::vector<Event*>::iterator iter = eventVec.begin(); iter != eventVec.end(); ++iter) {
-        string key;
+        key.clear();
         key.append((*iter)->GetSource())
             .append(">")
             .append((*iter)->GetObject())

@@ -14,6 +14,7 @@
 
 #include "LogFileProfiler.h"
 #include <string>
+#include "flusher/KafkaSender.h"
 #include "common/version.h"
 #include "common/Constants.h"
 #include "common/StringTools.h"
@@ -164,41 +165,35 @@ bool LogFileProfiler::GetProfileData(LogGroup& logGroup, LogStoreStatistic* stat
     }
 
     // get logstore send info
-    if (statistic->mHostLogPath.empty()) {
-        LogstoreFeedBackKey fbKey = GenerateLogstoreFeedBackKey(statistic->mProjectName, statistic->mCategory);
-        LogstoreSenderStatistics senderStatistics = Sender::Instance()->GetSenderStatistics(fbKey);
+    // if (statistic->mHostLogPath.empty()) {
+    LogstoreFeedBackKey fbKey = GenerateLogstoreFeedBackKey(statistic->mConfigName, "");
+    KafkaSendStatistics senderStatistics = KafkaSender::Instance()->GetSenderStatistics(fbKey);
 
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("max_unsend_time");
-        contentPtr->set_value(ToString(senderStatistics.mMaxUnsendTime));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("min_unsend_time");
-        contentPtr->set_value(ToString(senderStatistics.mMinUnsendTime));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("max_send_success_time");
-        contentPtr->set_value(ToString(senderStatistics.mMaxSendSuccessTime));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_queue_size");
-        contentPtr->set_value(ToString(senderStatistics.mSendQueueSize));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_network_error");
-        contentPtr->set_value(ToString(senderStatistics.mSendNetWorkErrorCount));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_quota_error");
-        contentPtr->set_value(ToString(senderStatistics.mSendQuotaErrorCount));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_discard_error");
-        contentPtr->set_value(ToString(senderStatistics.mSendDiscardErrorCount));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_success_count");
-        contentPtr->set_value(ToString(senderStatistics.mSendSuccessCount));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("send_block_flag");
-        contentPtr->set_value(ToString(senderStatistics.mSendBlockFlag));
-        contentPtr = logPtr->add_contents();
-        contentPtr->set_key("sender_valid_flag");
-        contentPtr->set_value(ToString(senderStatistics.mValidToSendFlag));
-    }
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("max_unsend_time");
+    contentPtr->set_value(ToString(senderStatistics.mMaxUnsendTime));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("min_unsend_time");
+    contentPtr->set_value(ToString(senderStatistics.mMinUnsendTime));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("max_send_success_time");
+    contentPtr->set_value(ToString(senderStatistics.mMaxSendSuccessTime));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("send_queue_size");
+    contentPtr->set_value(ToString(senderStatistics.mSendQueueSize));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("send_success_count");
+    contentPtr->set_value(ToString(senderStatistics.mSendSuccessCount));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("send_error_count");
+    contentPtr->set_value(ToString(senderStatistics.mSendErrorCount));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("send_block_flag");
+    contentPtr->set_value(ToString(senderStatistics.mSendBlockFlag));
+    contentPtr = logPtr->add_contents();
+    contentPtr->set_key("sender_valid_flag");
+    contentPtr->set_value(ToString(senderStatistics.mValidToSendFlag));
+    // }
 
     return true;
 }
@@ -518,14 +513,10 @@ void LogFileProfiler::UpdateDumpData(const sls_logs::LogGroup& logGroup, Json::V
                 category["max_send_success_time"] = value;
             else if (key == "send_queue_size")
                 category["send_queue_size"] = value;
-            else if (key == "send_network_error")
-                category["send_network_error"] = value;
-            else if (key == "send_quota_error")
-                category["send_quota_error"] = value;
-            else if (key == "send_discard_error")
-                category["send_discard_error"] = value;
             else if (key == "send_success_count")
                 category["send_success_count"] = value;
+            else if (key == "send_error_count")
+                category["send_error_count"] = value;
             else if (key == "sender_valid_flag")
                 category["sender_valid_flag"] = value;
             else if (key == "send_block_flag")

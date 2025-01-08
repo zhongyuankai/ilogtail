@@ -488,7 +488,7 @@ public:
 
     virtual void FeedBack(const LogstoreFeedBackKey& key) { mTrigger.Trigger(); }
 
-    virtual bool IsValidToPush(const LogstoreFeedBackKey& key) {
+    virtual bool IsValidToPush(const LogstoreFeedBackKey& key, FeedBackStatusPtr status = nullptr) {
         PTScopedLock dataLock(mLock);
         auto& singleQueue = mLogstoreSenderQueueMap[key];
 

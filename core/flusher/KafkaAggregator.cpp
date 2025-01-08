@@ -1,9 +1,11 @@
 #include "flusher/KafkaAggregator.h"
+#include "Constants.h"
 #include "flusher/KafkaSender.h"
 #include "common/Flags.h"
 #include "models/StringView.h"
 
 #include <filesystem>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -18,7 +20,11 @@ using WriteBuffer = sonic_json::WriteBuffer;
 
 
 void KafkaAggregator::RegisterFlusher(FlusherKafka * flusherKafka) {
-    mMergeMap[flusherKafka->GetLogstoreKey()] = std::make_shared<MergeEntry>(flusherKafka);
+    if (auto it = mMergeMap.find(flusherKafka->GetLogstoreKey()); it != mMergeMap.end()) {
+        it->second->mFlusherKafka = flusherKafka;
+    } else {
+        mMergeMap[flusherKafka->GetLogstoreKey()] = std::make_shared<MergeEntry>(flusherKafka);
+    }
     LOG_INFO(sLogger, ("KafkaAggregator register flusher, logstoreKey", flusherKafka->GetLogstoreKey())("configName", flusherKafka->configName));
 }
 
@@ -57,19 +63,27 @@ bool KafkaAggregator::Add(std::vector<PipelineEventGroup> & eventGroupList, size
     return true;
 }
 
-bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList, MergeEntryPtr entry) {
+bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList, MergeEntryPtr & entry) {
     sonic_json::Document doc;
     auto & alloc = doc.GetAllocator();
     doc.SetArray();
+
+    LoggroupEntry * data = new LoggroupEntry(
+                entry->mFlusherKafka->topic,
+                entry->mFlusherKafka->logstoreKey,
+                entry->mFlusherKafka->kafkaProducerKey);
 
     int32_t logLines = 0;
     for (const auto & eventGroup : eventGroupList) {
         auto path = fs::path(eventGroup.GetTag(LOG_RESERVED_KEY_PATH).to_string());
         std::string inode = eventGroup.GetTag(LOG_RESERVED_KEY_INODE).to_string();
+
         int64_t currentTime = static_cast<int64_t>(time(nullptr)) * 1000;
 
         std::string parentPath = path.parent_path();
         std::string logName = path.filename();
+
+        int64_t offset = -1;
 
         for (const auto & event : eventGroup.GetEvents()) {
             if (!event.Is<LogEvent>()) {
@@ -91,6 +105,11 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
 
                     try {
                         fileOffset = StringTo<int64_t>(fileOffsetStr);
+                        if (offset == -1) {
+                            offset = fileOffset;
+                        } else if (fileOffset < offset) {
+                            offset = fileOffset;
+                        }
                     } catch (...) {
                     }
                 }
@@ -156,66 +175,90 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
 
             doc.PushBack(std::move(node), alloc);
         }
+
+        /// 计算数据最小的offset
+        if (offset != -1) {
+            std::string fileHeadMd5 = eventGroup.GetTag(LOG_RESERVED_KEY_FILE_HEAD_MD5).to_string();
+            LoggroupOffsetKey key(entry->mFlusherKafka->logstoreKey);
+            key.mFileKey = std::move(inode);
+            key.mFileHeadMd5 = std::move(fileHeadMd5);
+
+            auto [it, inserted] = data->mFileOffsets.emplace(key, offset);
+            if (!inserted && offset < it->second) {
+                it->second = offset;
+            }
+        }
     }
 
     if (logLines == 0) {
+        delete data;
         LOG_WARNING(sLogger, ("log group is empty, skip send, configName", entry->mFlusherKafka->configName));
         return true;
     }
 
-    WriteBuffer wb;
-    doc.Serialize(wb);
+    doc.Serialize(*(data->mLogData));
+    data->mLogLines = logLines;
 
     static KafkaSender * sender = KafkaSender::Instance();
-    return sender->PushQueue(new LoggroupEntry(
-                entry->mFlusherKafka->configName,
-                entry->mFlusherKafka->topic,
-                entry->mFlusherKafka->logstoreKey,
-                entry->mFlusherKafka->kafkaProducerKey,
-                std::move(wb),
-                logLines));
+    return sender->PushQueue(data);
 }
 
 bool KafkaAggregator::FlushReadyBuffer() {
     static KafkaSender * sender = KafkaSender::Instance();
     
-    static std::vector<MergeEntryPtr> sendEntrys;
+    std::vector<PipelineEventGroup> sendList;
     time_t currentTime = time(nullptr);
     for (auto it = mMergeMap.begin(); it != mMergeMap.end(); ++it) {
-        if (it->second->mLastSendTime + INT32_FLAG(batch_kafka_send_interval) < currentTime) {
-            if (!sender->GetSenderFeedBackInterface()->IsValidToPush(it->second->mFlusherKafka->logstoreKey)) {
-                sendEntrys.clear();
-                return false;
+        MergeEntryPtr entry = it->second;
+        if (entry->mLastSendTime + INT32_FLAG(batch_kafka_send_interval) > currentTime) {
+            if (!sender->GetSenderFeedBackInterface()->IsValidToPush(entry->mFlusherKafka->logstoreKey)) {
+                continue;
             }
-            sendEntrys.push_back(it->second);
         }
-    }
 
-    for (auto & entry : sendEntrys) {
-        std::vector<PipelineEventGroup> sendList;
         {
             std::lock_guard<std::mutex> lock(entry->mMutex);
             if (entry->mLogSize == 0) {
                 continue;
             }
+
             sendList.insert(sendList.end(), std::make_move_iterator(entry->mEventGroupList.begin()), std::make_move_iterator(entry->mEventGroupList.end()));
             entry->clear();
         }
 
         SendData(sendList, entry);
+        sendList.clear();
     }
-    sendEntrys.clear();
     return true;
 }
 
 bool KafkaAggregator::ForceFlushBuffer() {
+    std::vector<PipelineEventGroup> sendList;
+    for (auto it = mMergeMap.begin(); it != mMergeMap.end(); ++it) {
+        MergeEntryPtr entry = it->second;
+        {
+            std::lock_guard<std::mutex> lock(entry->mMutex);
+            if (entry->mLogSize == 0) {
+                continue;
+            }
+
+            sendList.insert(sendList.end(), std::make_move_iterator(entry->mEventGroupList.begin()), std::make_move_iterator(entry->mEventGroupList.end()));
+            entry->clear();
+        }
+
+        SendData(sendList, entry);
+        sendList.clear();
+    }
+    return true;
+}
+
+bool KafkaAggregator::IsMergeMapEmpty(int64_t kafkaProducerKey) {
     for (auto it = mMergeMap.begin(); it != mMergeMap.end(); ++it) {
         MergeEntryPtr entry = it->second;
         std::lock_guard<std::mutex> lock(entry->mMutex);
-        if (entry->mLogSize == 0) {
-            continue;
+        if (entry->mFlusherKafka->kafkaProducerKey == kafkaProducerKey && entry->mLogSize != 0) {
+            return false;
         }
-        SendData(entry->mEventGroupList, entry);
     }
     return true;
 }

@@ -209,6 +209,8 @@ public:
     // 废弃，bin更新
     // virtual void ExtraWork() = 0;
 
+    void RollbackSendErrorOffset();
+
     void DumpAllHandlersMeta(bool);
     std::vector<std::pair<std::string, EventHandler*> > FindAllSubDirAndHandler(const std::string& baseDir);
     void UnregisterAllDir(const std::string& basePath);

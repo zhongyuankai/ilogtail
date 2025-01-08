@@ -18,6 +18,7 @@
 #define _LOG_DEVINODE_H__
 
 #include <string>
+#include <sstream>
 
 namespace logtail {
 
@@ -44,6 +45,11 @@ public:
         } else {
             return false;
         }
+    }
+    std::string ToString() const {
+        std::ostringstream oss;
+        oss << dev << "_" << inode;
+        return oss.str();
     }
     bool operator==(const DevInode& o) const { return o.inode == inode && o.dev == dev; }
     bool operator!=(const DevInode& o) const { return !(this->operator==(o)); }

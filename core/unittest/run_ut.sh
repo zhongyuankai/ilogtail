@@ -51,55 +51,162 @@ done
 echo "============== common =============" >> $output
 cd common
 ./common_simple_utils_unittest >> $output 2>&1
-./common_util_unittest >> $output 2>&1
+./common_logfileoperator_unittest >> $output 2>&1
+./common_sender_queue_unittest >> $output 2>&1
+./common_sliding_window_counter_unittest >> $output 2>&1
+./common_string_tools_unittest >> $output 2>&1
+./common_machine_info_util_unittest >> $output 2>&1
+./encoding_converter_unittest >> $output 2>&1
+./yaml_util_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
+
+echo "============== checkpoint ==============" >> $output
+cd checkpoint
+./checkpoint_managerv3_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
 
 echo "============== config ==============" >> $output
 cd config
-./config_match_unittest >> $output 2>&1
-./config_updator_unittest >> $output 2>&1
+./config_unittest >> $output 2>&1
+./config_watcher_unittest >> $output 2>&1
+./config_update_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
 
-echo "============== parser ==============" >> $output
-cd parser
-./parser_unittest >> $output 2>&1
+echo "============== controller ==============" >> $output
+cd controller
+./event_dispatcher_dir_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
 
-echo "============== polling ==============" >> $output
-cd polling
-./polling_unittest >> $output 2>&1
+echo "============== event ==============" >> $output
+cd event
+./event_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
+
+echo "============== event_handler ==============" >> $output
+cd event_handler
+./log_input_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
+echo "============== file_source ==============" >> $output
+cd file_source 
+./file_discovery_options_unittest >> $output 2>&1
+./multiline_options_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
+echo "============== input ==============" >> $output
+cd input 
+./input_file_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
+# echo "============== models ==============" >> $output
+# cd models
+# ./pipeline_event_unittest >> $output 2>&1
+# ./log_event_unittest >> $output 2>&1
+# ./pipeline_event_ptr_unittest >> $output 2>&1
+# ./pipeline_event_group_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+
+echo "============== pipeline ==============" >> $output
+cd pipeline
+./global_config_unittest >> $output 2>&1
+./pipeline_unittest >> $output 2>&1
+./pipeline_manager_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
+
+echo "============== plugin ==============" >> $output
+cd plugin
+./static_input_creator_unittest >> $output 2>&1
+./static_processor_creator_unittest >> $output 2>&1
+./static_flusher_creator_unittest >> $output 2>&1
+./input_instance_unittest >> $output 2>&1
+./processor_instance_unittest >> $output 2>&1
+./plugin_registry_unittest >> $output 2>&1
+cd ..
+echo "====================================" >> $output
+
 
 echo "============== processor ==============" >> $output
 cd processor
-./processor_filter_unittest >> $output 2>&1
+./processor_split_log_string_native_unittest >> $output 2>&1
+./processor_split_multiline_log_string_native_unittest >> $output 2>&1
+./processor_parse_regex_native_unittest >> $output 2>&1
+./processor_parse_json_native_unittest >> $output 2>&1
+./processor_parse_timestamp_native_unittest >> $output 2>&1
+./processor_tag_native_unittest >> $output 2>&1
+./processor_parse_apsara_native_unittest >> $output 2>&1
+./processor_parse_delimiter_native_unittest >> $output 2>&1
+./processor_filter_native_unittest >> $output 2>&1
+./processor_desensitize_native_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
 
 echo "============== reader ==============" >> $output
 cd reader
-if [ ! -d testDataSet ]; then
-	cp -r $CURRENT_DIR/reader/testDataSet ./
-fi
-./reader_unittest >> $output 2>&1
+./log_file_reader_deleted_file_unittest >> $output 2>&1
+./file_reader_options_unittest >> $output 2>&1
+./json_log_file_reader_unittest >> $output 2>&1
+./remove_last_incomplete_log_unittest >> $output 2>&1
+./log_file_reader_unittest >> $output 2>&1
+./source_buffer_unittest >> $output 2>&1
 cd ..
 echo "====================================" >> $output
 
-echo "============== sender ==============" >> $output
-cd sender
-./sender_unittest >> $output 2>&1
-cd ..
 
-echo "============== profiler ==============" >> $output
-cd profiler
-./profiler_data_integrity_unittest >> $output 2>&1
-cd ..
-echo "====================================" >> $output
-echo "====================================" >> $output
+
+
+
+
+
+# echo "============== parser ==============" >> $output
+# cd parser
+# ./parser_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+
+# echo "============== polling ==============" >> $output
+# cd polling
+# ./polling_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+
+# echo "============== processor ==============" >> $output
+# cd processor
+# ./processor_filter_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+
+# echo "============== reader ==============" >> $output
+# cd reader
+# if [ ! -d testDataSet ]; then
+# 	cp -r $CURRENT_DIR/reader/testDataSet ./
+# fi
+# ./reader_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+
+# echo "============== sender ==============" >> $output
+# cd sender
+# ./sender_unittest >> $output 2>&1
+# cd ..
+
+# echo "============== profiler ==============" >> $output
+# cd profiler
+# ./profiler_data_integrity_unittest >> $output 2>&1
+# cd ..
+# echo "====================================" >> $output
+# echo "====================================" >> $output
 
 # Collect logs.
 for dir in `ls -al`

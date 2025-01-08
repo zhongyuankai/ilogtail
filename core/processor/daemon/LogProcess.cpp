@@ -172,8 +172,6 @@ void LogProcess::HoldOn() {
         }
         if (allThreadWait) {
             LOG_INFO(sLogger, ("process daemon pause", "succeeded"));
-
-            KafkaAggregator::GetInstance()->ForceFlushBuffer();
             return;
         }
         usleep(10 * 1000);
@@ -487,6 +485,8 @@ int LogProcess::ProcessBuffer(std::shared_ptr<LogBuffer>& logBuffer,
         for (size_t i = 0; i < extraTags.size(); ++i) {
             eventGroup.SetTag(extraTags[i].key(), extraTags[i].value());
         }
+
+        eventGroup.SetTag(LOG_RESERVED_KEY_FILE_HEAD_MD5, logFileReader->GetFileHeadMd5());
 
         LogEvent* event = eventGroup.AddLogEvent();
         time_t logtime = time(NULL);

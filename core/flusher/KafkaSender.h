@@ -4,7 +4,7 @@
 #include "common/Thread.h"
 #include "flusher/KafkaSenderQueueParam.h"
 #include "flusher/FlusherKafka.h"
-#include "flusher/LogstoreKafkaSenderQueue.h"
+#include "flusher/KafkaSenderQueue.h"
 #include "librdkafka/rdkafkacpp.h"
 
 #include <unordered_map>
@@ -59,11 +59,11 @@ struct KafkaProducerEntry {
 
 class KafkaSender {
 public:
-    static KafkaSender* Instance();
+    static KafkaSender * Instance();
 
     bool PushQueue(LoggroupEntry * data);
 
-    bool CreateKafkaProducer(std::string & brokers, std::string & username, std::string & password);
+    bool CreateKafkaProducer(FlusherKafka * flusherKafka);
     void RemoveKafkaProducer(int64_t kafkaProducerKey);
 
     void ClearKafakProducerThread();
@@ -78,6 +78,15 @@ public:
     void SetQueueUrgent();
 
     bool FlushOut(int32_t time_interval_in_mili_seconds);
+
+    void OnSendDone(LoggroupEntry * data, KafkaSendInfo::SendResult sendRst);
+
+    LoggroupOffsetMap GetSendFailedOffsets();
+
+    bool RegisterKafkaFlusher(FlusherKafka * flusherKafka);
+    void RemoveKafkaFlusher(FlusherKafka * flusherKafka, bool removeQueue);
+
+    KafkaSendStatistics GetSenderStatistics(const LogstoreFeedBackKey & key);
 
 private:
     KafkaSender();
@@ -96,7 +105,7 @@ private:
     std::atomic_uint64_t mSendTime{0};
     std::atomic_int mPushQueueFailedCount{0};
 
-    LogstoreKafkaSenderQueue<KafkaSenderQueueParam> mSenderQueue;
+    KafkaSenderQueue mSenderQueue;
 
     std::mutex kafkaProducersMutex;
     std::unordered_map<int64_t, std::shared_ptr<KafkaProducerEntry>> kafkaProducers;
@@ -105,4 +114,4 @@ private:
     bool needClearThead = false;
 };
 
-} 
+} // namespace logtail

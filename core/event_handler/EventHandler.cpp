@@ -190,6 +190,15 @@ bool CreateModifyHandler::DumpReaderMeta(bool isRotatorReader, bool checkConfigF
     return true;
 }
 
+void CreateModifyHandler::RollbackSendErrorOffset(bool isRotatorReader, LoggroupOffsetMap & fileOffsets) {
+    for (ModifyHandlerMap::iterator iter = mModifyHandlerPtrMap.begin(); iter != mModifyHandlerPtrMap.end(); ++iter) {
+        if (fileOffsets.empty()) {
+            return;
+        }
+        iter->second->RollbackSendErrorOffset(isRotatorReader, fileOffsets);
+    }
+}
+
 bool CreateModifyHandler::IsAllFileRead() {
     for (ModifyHandlerMap::iterator iter = mModifyHandlerPtrMap.begin(); iter != mModifyHandlerPtrMap.end(); ++iter) {
         if (!iter->second->IsAllFileRead()) {
@@ -1005,6 +1014,24 @@ bool ModifyHandler::DumpReaderMeta(bool isRotatorReader, bool checkConfigFlag) {
         }
     }
     return true;
+}
+
+void ModifyHandler::RollbackSendErrorOffset(bool isRotatorReader, LoggroupOffsetMap & fileOffsets) {
+    if (!isRotatorReader) {
+        for (DevInodeLogFileReaderMap::iterator it = mDevInodeReaderMap.begin(); it != mDevInodeReaderMap.end(); ++it) {
+            if (fileOffsets.empty()) {
+                return;
+            }
+            it->second->RollbackSendErrorOffset(fileOffsets);
+        }
+    } else {
+        for (DevInodeLogFileReaderMap::iterator it = mRotatorReaderMap.begin(); it != mRotatorReaderMap.end(); ++it) {
+            if (fileOffsets.empty()) {
+                return;
+            }
+            it->second->RollbackSendErrorOffset(fileOffsets);
+        }
+    }
 }
 
 bool ModifyHandler::IsAllFileRead() {

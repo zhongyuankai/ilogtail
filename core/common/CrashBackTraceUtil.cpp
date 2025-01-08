@@ -86,6 +86,10 @@ void CrashBackTrace(int signum) {
     fflush(g_crashBackTraceFilePtr);
     fclose(g_crashBackTraceFilePtr);
     _exit(10);
+
+    // 返回信号，由操作系统处理
+    // signal(signum, SIG_DFL);  // 恢复默认处理
+    // raise(signum);  // 重新抛出信号
 }
 #elif defined(_MSC_VER)
 bool FilterCallbackFunc(void* context, EXCEPTION_POINTERS* exinfo, MDRawAssertionInfo* assertion) {

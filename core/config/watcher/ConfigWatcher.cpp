@@ -187,10 +187,13 @@ ConfigDiff ConfigWatcher::CheckConfigDiff() {
                      ("existing valid config is removed", "prepare to stop current running pipeline")("config", name));
         }
     }
-    for (const auto& item : mFileInfoMap) {
-        string configName = filesystem::path(item.first).stem().string();
+
+    for (auto it = mFileInfoMap.begin(); it != mFileInfoMap.end(); ) {
+        string configName = filesystem::path(it->first).stem().string();
         if (configSet.find(configName) == configSet.end()) {
-            mFileInfoMap.erase(item.first);
+            it = mFileInfoMap.erase(it);
+        } else {
+            ++it;
         }
     }
 
