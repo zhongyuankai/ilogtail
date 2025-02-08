@@ -2,6 +2,7 @@
 #include "Constants.h"
 #include "flusher/KafkaSender.h"
 #include "common/Flags.h"
+#include "common/TimeUtil.h"
 #include "models/StringView.h"
 
 #include <filesystem>
@@ -73,12 +74,12 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
                 entry->mFlusherKafka->logstoreKey,
                 entry->mFlusherKafka->kafkaProducerKey);
 
+    int64_t currentTime = GetCurrentTimeInMilliSeconds();    
+
     int32_t logLines = 0;
     for (const auto & eventGroup : eventGroupList) {
         auto path = fs::path(eventGroup.GetTag(LOG_RESERVED_KEY_PATH).to_string());
         std::string inode = eventGroup.GetTag(LOG_RESERVED_KEY_INODE).to_string();
-
-        int64_t currentTime = static_cast<int64_t>(time(nullptr)) * 1000;
 
         std::string parentPath = path.parent_path();
         std::string logName = path.filename();
@@ -92,7 +93,6 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
 
             auto & logEvent = event.Cast<LogEvent>();
 
-            int64_t logTime = static_cast<int64_t>(logEvent.GetTimestamp()) * 1000;
             StringView content;
             std::string fileOffsetStr;
             int64_t fileOffset = -1;
@@ -135,7 +135,7 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
             node.AddMember(odinLeafKey, NodeType(entry->mFlusherKafka->odinLeaf), alloc, false);
 
             static std::string logTimeKey = "logTime";
-            node.AddMember(logTimeKey, NodeType(logTime), alloc, false);
+            node.AddMember(logTimeKey, NodeType(logEvent.GetTimestampMillisecond()), alloc, false);
 
             static std::string logIdKey = "logId";
             node.AddMember(logIdKey, NodeType(entry->mFlusherKafka->logId), alloc, false);
@@ -156,7 +156,7 @@ bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList,
             node.AddMember(pathIdKey, NodeType(entry->mFlusherKafka->pathId), alloc, false);
 
             static std::string timestampKey = "timestamp";
-            node.AddMember(timestampKey, NodeType(ToString(logTime), alloc), alloc, false);
+            node.AddMember(timestampKey, NodeType(ToString(logEvent.GetTimestampMillisecond()), alloc), alloc, false);
 
             static std::string collectTimeKey = "collectTime";
             node.AddMember(collectTimeKey, NodeType(currentTime), alloc, false);

@@ -321,11 +321,11 @@ void* LogProcess::ProcessLoop(int32_t threadNo) {
             ProcessProfile profile;
             profile.readBytes = readBytes;
             int32_t parseStartTime = (int32_t)time(NULL);
-            bool needSend = false;
+            // bool needSend = false;
             // if (!BOOL_FLAG(enable_new_pipeline)) {
             //     needSend = (0 == ProcessBufferLegacy(logBuffer, logFileReader, logGroup, profile, *config));
             // } else {
-            needSend = (0 == ProcessBuffer(logBuffer, logFileReader, logGroupList, profile));
+            ProcessBuffer(logBuffer, logFileReader, logGroupList, profile);
             // }
             const std::string& projectName = pipeline->GetContext().GetProjectName();
             const std::string& category = pipeline->GetContext().GetLogstoreName();
@@ -489,11 +489,11 @@ int LogProcess::ProcessBuffer(std::shared_ptr<LogBuffer>& logBuffer,
         eventGroup.SetTag(LOG_RESERVED_KEY_FILE_HEAD_MD5, logFileReader->GetFileHeadMd5());
 
         LogEvent* event = eventGroup.AddLogEvent();
-        time_t logtime = time(NULL);
+        int64_t logtime = GetCurrentTimeInMilliSeconds();
         if (AppConfig::GetInstance()->EnableLogTimeAutoAdjust()) {
             logtime += GetTimeDelta();
         }
-        event->SetTimestamp(logtime);
+        event->SetTimestampMillisecond(logtime);
         event->SetContentNoCopy(DEFAULT_CONTENT_KEY, logBuffer->rawBuffer);
         auto offsetStr = event->GetSourceBuffer()->CopyString(std::to_string(logBuffer->readOffset));
         event->SetContentNoCopy(LOG_RESERVED_KEY_FILE_OFFSET, StringView(offsetStr.data, offsetStr.size));

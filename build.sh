@@ -51,7 +51,11 @@ cp "${ROOTDIR}/${OUT_DIR}/ilogtail_config.json" "${ROOTDIR}/${DIST_DIR}/${PACKAG
 cp "${ROOTDIR}/${OUT_DIR}/control" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 
 # 5. 去除符号信息，打包dist
-strip "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail"
+objcopy --only-keep-debug "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail.debug"
+chmod 0644 "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail.debug"
+strip --strip-debug --remove-section=.comment --remove-section=.note "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail"
+objcopy --add-gnu-debuglink "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail.debug" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail"
+mv "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}/ilogtail.debug" "${ROOTDIR}/${OUT_DIR}/"
 
 cd "${ROOTDIR}/${DIST_DIR}"
 tar -cvzf "${PACKAGE_DIR}.tar.gz" -C "${PACKAGE_DIR}" "."

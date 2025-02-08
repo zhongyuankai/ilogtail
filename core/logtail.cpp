@@ -61,7 +61,7 @@ void enable_core(void) {
     struct rlimit rlim_old;
     struct rlimit rlim_new;
     if (getrlimit(RLIMIT_CORE, &rlim_old) == 0) {
-        rlim_new.rlim_cur = rlim_new.rlim_max = 1024 * 1024 * 1024;
+        rlim_new.rlim_cur = rlim_new.rlim_max = 40 * 1024 * 1024 * 1024;
         if (setrlimit(RLIMIT_CORE, &rlim_new) != 0) {
             rlim_new.rlim_cur = rlim_old.rlim_cur;
             rlim_new.rlim_max = rlim_old.rlim_max;

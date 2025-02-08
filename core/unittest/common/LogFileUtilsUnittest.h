@@ -35,8 +35,8 @@ void LogFileUtilsUnittest::TestGetTimeStringFromLineByIndex() {
 
     std::string format = convertJavaFormatToStrptime(timeFormat);
     APSARA_TEST_EQUAL("%Y-%m-%d %H:%M:%S", format);
-    time_t timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727363051, timestamp);
+    int64_t timestamp = parseTime(timeString, format);
+    APSARA_TEST_EQUAL(1727363051000, timestamp);
 
     startFlagIndex = 0;
     startFlag = "[";
@@ -50,7 +50,7 @@ void LogFileUtilsUnittest::TestGetTimeStringFromLineByIndex() {
     format = convertJavaFormatToStrptime(timeFormat);
     APSARA_TEST_EQUAL("%Y-%m-%d %H:%M:%S", format);
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727363051, timestamp);
+    APSARA_TEST_EQUAL(1727363051000, timestamp);
 
     startFlagIndex = 0;
     startFlag = "";
@@ -64,7 +64,7 @@ void LogFileUtilsUnittest::TestGetTimeStringFromLineByIndex() {
     format = convertJavaFormatToStrptime(timeFormat);
     APSARA_TEST_EQUAL("%Y-%m-%d %H:%M:%S", format);
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727363051, timestamp);
+    APSARA_TEST_EQUAL(1727363051000, timestamp);
 
     startFlagIndex = 100;
     startFlag = "][";
@@ -90,7 +90,7 @@ void LogFileUtilsUnittest::TestParseTime() {
     APSARA_TEST_EQUAL("LongType-Time", format);
 
     time_t timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845000, timestamp);
 
     timeFormat = "yyyy-MM-dd HH:mm:ss";
     timeString = "2024-09-24 15:30:45";
@@ -98,7 +98,7 @@ void LogFileUtilsUnittest::TestParseTime() {
     APSARA_TEST_EQUAL("%Y-%m-%d %H:%M:%S", format);
 
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845000, timestamp);
 
     timeFormat = "yyyy-MM-dd'T'HH:mm:ss";
     timeString = "2024-09-24T15:30:45";
@@ -106,15 +106,15 @@ void LogFileUtilsUnittest::TestParseTime() {
     APSARA_TEST_EQUAL("%Y-%m-%dT%H:%M:%S", format);
 
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845000, timestamp);
 
     timeFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS";
-    timeString = "2024-09-24T15:30:45";
+    timeString = "2024-09-24T15:30:45.123";
     format = convertJavaFormatToStrptime(timeFormat);
-    APSARA_TEST_EQUAL("%Y-%m-%dT%H:%M:%S", format);
+    APSARA_TEST_EQUAL("%Y-%m-%dT%H:%M:%E3S", format);
 
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845123, timestamp);
 
     timeFormat = "yyyy/MM/dd HH:mm:ss";
     timeString = "2024/09/24 15:30:45";
@@ -122,7 +122,7 @@ void LogFileUtilsUnittest::TestParseTime() {
     APSARA_TEST_EQUAL("%Y/%m/%d %H:%M:%S", format);
 
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845000, timestamp);
 
     timeFormat = "dd/MMM/yyyy:HH:mm:ss";
     timeString = "24/Sep/2024:15:30:45";
@@ -130,18 +130,18 @@ void LogFileUtilsUnittest::TestParseTime() {
     APSARA_TEST_EQUAL("%d/%b/%Y:%H:%M:%S", format);
 
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1727191845, timestamp);
+    APSARA_TEST_EQUAL(1727191845000, timestamp);
 
     timeString = "2024-12-24 15:49:11";
     timeFormat = "yyyy-MM-dd HH:mm:ss";
     format = convertJavaFormatToStrptime(timeFormat);
     timestamp = parseTime(timeString, format);
-    APSARA_TEST_EQUAL(1735055351, timestamp);
+    APSARA_TEST_EQUAL(1735055351000, timestamp);
 
     std::string s = "2024-12-24 15:49:11.308010||level=INFO||file=..xiaojukeji.com/gulfstream/price-api/models/bill.SetEstimateCache/cache.go:198 _undef||traceid=0748593b61cafc3f24a44f2d103a0403||spanid=384637183434218699";
     StringView times{s.data(), 19};
     timestamp = parseTime(times, format);
-    APSARA_TEST_EQUAL(1735055351, timestamp);
+    APSARA_TEST_EQUAL(1735055351000, timestamp);
 
 }
 

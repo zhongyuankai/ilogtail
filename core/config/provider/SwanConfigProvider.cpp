@@ -188,11 +188,6 @@ std::string SwanConfigProvider::generateYamlConfig(const SwanConfig & swanConfig
         input1["Multiline"]["TimeStringLength"] = swanConfig.timeFormatLength;
         input1["Multiline"]["TimeFormat"] = convertJavaFormatToStrptime(swanConfig.timeFormat);
         input1["Multiline"]["UnmatchedContentTreatment"] = "single_line";
-        /// 不支持解析毫秒时间
-        if (swanConfig.timeFormat == "yyyy-MM-dd'T'HH:mm:ss.SSS") {
-            /// yyyy-MM-dd'T'HH:mm:ss
-            input1["Multiline"]["TimeStringLength"] = 19;
-        }
     }
 
     input1["AppendingLogPositionMeta"] = true;

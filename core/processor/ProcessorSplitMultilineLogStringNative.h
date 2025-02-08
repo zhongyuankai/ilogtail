@@ -55,7 +55,7 @@ private:
                         const LogEvent& sourceEvent,
                         PipelineEventGroup& logGroup,
                         EventsContainer& newEvents,
-                        time_t logTime = -1);
+                        int64_t logTime = -1);
     void HandleUnmatchLogs(const StringView& sourceVal,
                            long sourceoffset,
                            StringBuffer& sourceKey,

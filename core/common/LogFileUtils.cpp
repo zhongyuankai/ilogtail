@@ -58,11 +58,10 @@ StringView getTimeStringFromLineByIndex(const char* buffer, size_t size, const s
     return {};
 }
 
-time_t parseTime(const StringView & timeString, const std::string & timeFormat) {
+int64_t parseTime(const StringView & timeString, const std::string & timeFormat) {
     try {
         if (timeFormat == "LongType-Time") {
-            long long millis = boost::lexical_cast<long long>(timeString);
-            return static_cast<time_t>(millis / 1000);
+            return boost::lexical_cast<int64_t>(timeString);
         }
 
         absl::string_view s(timeString.data(), timeString.size());
@@ -70,14 +69,7 @@ time_t parseTime(const StringView & timeString, const std::string & timeFormat) 
         std::string err;
         static absl::TimeZone localTz = absl::LocalTimeZone();
         if (absl::ParseTime(timeFormat, s, localTz, &dateTime, &err)) {
-            return absl::ToUnixSeconds(dateTime);
-        }
-        /// 避免频繁的打印日志
-        static time_t lastPrintLogTime = 0;
-        time_t currentTime = time(nullptr);
-        if (currentTime - lastPrintLogTime > 5) {
-            LOG_WARNING(sLogger, ("parse time failed", err)("str", timeString)("format", timeFormat));
-            lastPrintLogTime = currentTime;
+            return absl::ToUnixMillis(dateTime);
         }
     } catch (...) {
         return -1;
@@ -95,7 +87,7 @@ std::string convertJavaFormatToStrptime(const std::string & javaFormat) {
     } else if (javaFormat == "yyyy-MM-dd'T'HH:mm:ss") {
         return "%Y-%m-%dT%H:%M:%S";
     } else if (javaFormat == "yyyy-MM-dd'T'HH:mm:ss.SSS") {
-        return "%Y-%m-%dT%H:%M:%S";
+        return "%Y-%m-%dT%H:%M:%E3S";
     } else if (javaFormat == "yyyy/MM/dd HH:mm:ss") {
         return "%Y/%m/%d %H:%M:%S";
     } else if (javaFormat == "dd/MMM/yyyy:HH:mm:ss") {

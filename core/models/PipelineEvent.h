@@ -40,6 +40,8 @@ public:
 
     Type GetType() const { return mType; }
     time_t GetTimestamp() const { return mTimestamp; }
+    int64_t GetTimestampMillisecond() const { return mTimestampMillisecond; }
+    void SetTimestampMillisecond(int64_t t) { mTimestampMillisecond = t; }
     std::optional<uint32_t> GetTimestampNanosecond() const { return mTimestampNanosecond; }
     void SetTimestamp(time_t t) { mTimestamp = t; }
     void SetTimestamp(time_t t, uint32_t ns) {
@@ -68,6 +70,7 @@ protected:
     Type mType = Type::NONE;
     time_t mTimestamp = 0;
     std::optional<uint32_t> mTimestampNanosecond;
+    int64_t mTimestampMillisecond;
     PipelineEventGroup* mPipelineEventGroupPtr = nullptr;
 };
 

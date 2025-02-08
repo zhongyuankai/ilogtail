@@ -165,6 +165,12 @@ function stop() {
         echo "----------------------$app is stopped!------------------" >> $logfile
         return 0;
     fi
+    local pid_dir="/proc/${pid}"
+    if [ ! -d "$pid_dir" ]; then
+        echo "$app is stopped!"
+        echo "----------------------$app is stopped!------------------" >> $logfile
+        return 0;
+    fi
     echo "kill ${pid}"
     echo "----------------------kill ${pid}------------------" >> $logfile
     kill ${pid} &>> $logfile

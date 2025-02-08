@@ -28,6 +28,7 @@
 #include "common/Constants.h"
 #include "common/ParamExtractor.h"
 #include "common/LogFileUtils.h"
+#include "common/TimeUtil.h"
 #include "logger/Logger.h"
 #include "models/LogEvent.h"
 #include "monitor/MetricConstants.h"
@@ -179,7 +180,7 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
 
     StringBuffer sourceKey = logGroup.GetSourceBuffer()->CopyString(mSourceKey);
     std::string exception;
-    const char* multiStartIndex = nullptr;
+    const char * multiStartIndex = nullptr;
     bool isPartialLog = false;
     size_t begin = 0;
 
@@ -314,9 +315,9 @@ void ProcessorSplitMultilineLogStringNative::ProcessEvent(PipelineEventGroup& lo
         auto & timeFormat = mMultiline.mTimeFormat;
 
         /// 基于时间的多行解析，会更新LogEvent的时间戳为日志打印的时间
-        time_t logTime = time(nullptr);
-        time_t currentTime = time(nullptr);
-        time_t maxCollectDelay = 0;
+        int64_t logTime = GetCurrentTimeInMilliSeconds();
+        int64_t currentTime = logTime;
+        int64_t maxCollectDelay = 0;
 
         while (begin < sourceVal.size()) {
             StringView content = GetNextLine(sourceVal, begin);
@@ -413,15 +414,13 @@ void ProcessorSplitMultilineLogStringNative::CreateNewEvent(const StringView& co
                                                             const LogEvent& sourceEvent,
                                                             PipelineEventGroup& logGroup,
                                                             EventsContainer& newEvents,
-                                                            time_t logTime) {
+                                                            int64_t logTime) {
     StringView sourceVal = sourceEvent.GetContent(mSourceKey);
     std::unique_ptr<LogEvent> targetEvent = logGroup.CreateLogEvent();
     if (logTime != -1) {
-        targetEvent->SetTimestamp(logTime, 0);
+        targetEvent->SetTimestampMillisecond(logTime);
     } else {
-        targetEvent->SetTimestamp(
-            sourceEvent.GetTimestamp(),
-            sourceEvent.GetTimestampNanosecond()); // it is easy to forget other fields, better solution?
+        targetEvent->SetTimestampMillisecond(sourceEvent.GetTimestampMillisecond());
     }
 
     targetEvent->SetContentNoCopy(StringView(sourceKey.data, sourceKey.size), content);

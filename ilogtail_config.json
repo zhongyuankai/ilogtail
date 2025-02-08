@@ -1,7 +1,4 @@
 {
-    "cpu_usage_limit": 10,
-    "mem_usage_limit": 6144,
-    "memory_usage_up_limit": 8192,
     "process_thread_count": 4,
     "send_request_concurrency": 30,
     "log_profile_save_interval": 300,

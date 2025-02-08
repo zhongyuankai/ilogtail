@@ -19,6 +19,10 @@
 #include "common/ParamExtractor.h"
 #include "models/LogEvent.h"
 
+#ifdef USE_SIMD_AVX2
+#include <immintrin.h>
+#endif
+
 namespace logtail {
 
 const std::string ProcessorSplitLogStringNative::sName = "processor_split_string_native";
@@ -115,9 +119,7 @@ void ProcessorSplitLogStringNative::ProcessEvent(PipelineEventGroup& logGroup,
         std::unique_ptr<LogEvent> targetEvent = logGroup.CreateLogEvent();
         StringView content = GetNextLine(sourceVal, begin);
         targetEvent->SetContentNoCopy(StringView(sourceKey.data, sourceKey.size), content);
-        targetEvent->SetTimestamp(
-            sourceEvent.GetTimestamp(),
-            sourceEvent.GetTimestampNanosecond()); // it is easy to forget other fields, better solution?
+        targetEvent->SetTimestampMillisecond(sourceEvent.GetTimestampMillisecond());
         if (mAppendingLogPositionMeta) {
             auto const offset = sourceOffset + (content.data() - sourceVal.data());
             StringBuffer offsetStr = logGroup.GetSourceBuffer()->CopyString(std::to_string(offset));
@@ -140,11 +142,37 @@ StringView ProcessorSplitLogStringNative::GetNextLine(StringView log, size_t beg
         return StringView();
     }
 
+#ifdef USE_SIMD_AVX2
+    const char * data = log.data();
+    const size_t vecSize = 32;
+    __m256i newlineVec = _mm256_set1_epi8('\n');
+    
+    size_t pos = begin;
+    for (; pos + vecSize <= log.size(); pos += vecSize) {
+        __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + pos));
+        __m256i cmp = _mm256_cmpeq_epi8(chunk, newlineVec);
+        int mask = _mm256_movemask_epi8(cmp);
+
+        if (mask != 0) {
+            int offset = __builtin_ctz(mask);
+            return StringView(data + begin, pos + offset - begin);
+        }
+    }
+
+    // 处理不足32字节
+    for (; pos < log.size(); ++pos) {
+        if (log[pos] == '\n') {
+            return StringView(data + begin, pos - begin);
+        }
+    }
+#else
     for (size_t end = begin; end < log.size(); ++end) {
         if (log[end] == mSplitChar) {
             return StringView(log.data() + begin, end - begin);
         }
     }
+#endif
+
     return StringView(log.data() + begin, log.size() - begin);
 }
 
