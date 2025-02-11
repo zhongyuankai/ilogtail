@@ -1,4 +1,6 @@
 #include "flusher/KafkaSender.h"
+#include <cstdint>
+#include "StringTools.h"
 #include "flusher/KafkaAggregator.h"
 #include "app_config/AppConfig.h"
 #include "common/Thread.h"
@@ -12,9 +14,10 @@
 
 DEFINE_FLAG_INT32(kafka_send_batch_num_messages, "kafka producer parameter.", 10000);
 DEFINE_FLAG_INT32(kafka_send_message_max_bytes, "kafka producer parameter.", 52428800);
-DEFINE_FLAG_INT32(kafka_send_queue_buffering_max_kbytes, "kafka producer parameter.", 2097152);
+DEFINE_FLAG_INT32(kafka_send_queue_buffering_max_kbytes, "kafka producer parameter.", 1048576);
 DEFINE_FLAG_INT32(kafka_send_queue_buffering_max_messages, "kafka producer parameter.", 100000);
 DEFINE_FLAG_INT32(kafka_send_queue_buffering_max_ms, "kafka producer parameter.", 200);
+DEFINE_FLAG_INT32(kafka_send_thread_count, "", 1);
 
 namespace logtail {
 
@@ -77,8 +80,8 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
     ThreadFlagsPtr threadFlags;
     int32_t threadNo;
     {
-        std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-        if (auto it = kafkaProducers.find(kafkaProducerKey); it != kafkaProducers.end()) {
+        std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+        if (auto it = mKafkaProducers.find(kafkaProducerKey); it != mKafkaProducers.end()) {
             auto & entry = it->second;
             producer = entry->mProducer;
             callback = entry->mCallback;
@@ -129,8 +132,8 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
 
             size_t sendFailedCount = 0;
             {
-                std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-                for (auto it = kafkaProducers.begin(); it != kafkaProducers.end(); ++it) {
+                std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+                for (auto it = mKafkaProducers.begin(); it != mKafkaProducers.end(); ++it) {
                     auto & entry = it->second;
                     sendFailedCount += entry->mCallback->getSendFailedCount();
                 }
@@ -226,11 +229,11 @@ void KafkaSender::DaemonSender(int64_t kafkaProducerKey) {
     }
 
     if (threadNo == mMetricThreadNo.load()) {
-        std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-        if (kafkaProducers.empty()) {
+        std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+        if (mKafkaProducers.empty()) {
             mMetricThreadNo.store(mThreadNo);
         } else {
-            auto & entry = kafkaProducers.begin()->second;
+            auto & entry = mKafkaProducers.begin()->second;
             mMetricThreadNo.store(entry->mThreadNo);
         }
         LOG_INFO(sLogger, ("Kafka SendThread switch metric thread", mMetricThreadNo.load()));
@@ -260,11 +263,29 @@ bool KafkaSender::PushQueue(LoggroupEntry * data) {
 }
 
 bool KafkaSender::CreateKafkaProducer(FlusherKafka * flusherKafka) {
-    std::lock_guard<std::mutex> lock(kafkaProducersMutex);
+    std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
 
-    int64_t kafkaProducerKey = flusherKafka->kafkaProducerKey;
-    auto it = kafkaProducers.find(kafkaProducerKey);
-    if (it != kafkaProducers.end()) {
+    std::string producerKey(flusherKafka->brokers);
+    producerKey.append("_")
+                .append(flusherKafka->username)
+                .append("_")
+                .append(flusherKafka->password);
+
+    if (auto it = mLogstoreKafkaProducerMap.find(flusherKafka->logstoreKey); it != mLogstoreKafkaProducerMap.end()) {
+        producerKey.append("_").append(ToString(it->second));
+    } else {
+        auto [iter, inserted] = mKafkaClusterCounter.try_emplace(producerKey, 0);
+        int32_t num = iter->second % INT32_FLAG(kafka_send_thread_count);
+        iter->second++;
+        mLogstoreKafkaProducerMap[flusherKafka->logstoreKey] = num;
+        producerKey.append("_").append(ToString(num));
+    }
+
+    int64_t kafkaProducerKey = HashString(producerKey);
+    flusherKafka->SetKafkaProducerkey(kafkaProducerKey);
+
+    auto it = mKafkaProducers.find(kafkaProducerKey);
+    if (it != mKafkaProducers.end()) {
         it->second->mTaskCount++;
         return true;
     }
@@ -305,7 +326,7 @@ bool KafkaSender::CreateKafkaProducer(FlusherKafka * flusherKafka) {
     }
 
     std::shared_ptr<KafkaProducerEntry> entry = std::make_shared<KafkaProducerEntry>(producer, callback);
-    kafkaProducers.emplace(kafkaProducerKey, entry);
+    mKafkaProducers.emplace(kafkaProducerKey, entry);
     ThreadPtr thread = CreateThread([this, kafkaProducerKey]() { DaemonSender(kafkaProducerKey); });
     entry->setThread(thread, mThreadNo);
     mThreadNo++;
@@ -313,9 +334,9 @@ bool KafkaSender::CreateKafkaProducer(FlusherKafka * flusherKafka) {
 }
 
 void KafkaSender::RemoveKafkaProducer(int64_t kafkaProducerKey) {
-    std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-    auto it = kafkaProducers.find(kafkaProducerKey);
-    if (it == kafkaProducers.end()) {
+    std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+    auto it = mKafkaProducers.find(kafkaProducerKey);
+    if (it == mKafkaProducers.end()) {
         return;
     }
 
@@ -323,22 +344,22 @@ void KafkaSender::RemoveKafkaProducer(int64_t kafkaProducerKey) {
     if (--entry->mTaskCount > 0) {
         return;
     }
-    needClearThead = true;
+    mNeedClearThead = true;
 }
 
 void KafkaSender::ClearKafakProducerThread() {
     std::vector<std::shared_ptr<KafkaProducerEntry>> entrys;
     {
-        std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-        if (!needClearThead) {
+        std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+        if (!mNeedClearThead) {
             return;
         }
-        for (auto it = kafkaProducers.begin(); it != kafkaProducers.end();) {
+        for (auto it = mKafkaProducers.begin(); it != mKafkaProducers.end();) {
             auto & entry = it->second;
             if (entry->mTaskCount == 0) {
                 entrys.push_back(entry);
-                it = kafkaProducers.erase(it);
-                needClearThead = false;
+                it = mKafkaProducers.erase(it);
+                mNeedClearThead = false;
             } else {
                 ++it;
             }
@@ -376,8 +397,8 @@ bool KafkaSender::FlushOut(int32_t time_interval_in_mili_seconds) {
 }
 
 bool KafkaSender::IsFlush() {
-    std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-    for (auto it = kafkaProducers.begin(); it != kafkaProducers.end(); ++it) {
+    std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+    for (auto it = mKafkaProducers.begin(); it != mKafkaProducers.end(); ++it) {
         auto & entry = it->second;
         if (entry->mThreadFlags->mFlushLog) {
             return true;
@@ -389,8 +410,8 @@ bool KafkaSender::IsFlush() {
 void KafkaSender::SetFlush() {
     std::vector<ThreadFlagsPtr> flags;
     {
-        std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-        for (auto it = kafkaProducers.begin(); it != kafkaProducers.end(); ++it) {
+        std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+        for (auto it = mKafkaProducers.begin(); it != mKafkaProducers.end(); ++it) {
             auto & entry = it->second;
             flags.push_back(entry->mThreadFlags);
         }
@@ -404,8 +425,8 @@ void KafkaSender::SetFlush() {
 void KafkaSender::ResetFlush() {
     std::vector<ThreadFlagsPtr> flags;
     {
-        std::lock_guard<std::mutex> lock(kafkaProducersMutex);
-        for (auto it = kafkaProducers.begin(); it != kafkaProducers.end(); ++it) {
+        std::lock_guard<std::mutex> lock(mKafkaProducersMutex);
+        for (auto it = mKafkaProducers.begin(); it != mKafkaProducers.end(); ++it) {
             auto & entry = it->second;
             flags.push_back(entry->mThreadFlags);
         }

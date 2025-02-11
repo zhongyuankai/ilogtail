@@ -178,7 +178,7 @@ void LogFileUtilsUnittest::TestGetFileNodeHeadMd5() {
     std::ofstream file1(path, std::ios::out | std::ios::trunc);
     file1.close();
 
-    targetMd5 = "Failed";
+    targetMd5 = MD5_FAILED_TAG;
     LogFileOperator fileOp1;
     fileOp1.Open(path1.c_str(), false);
     for (int i = 0; i < 10; i++) {

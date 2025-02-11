@@ -22,6 +22,7 @@ public:
 
     const LogstoreFeedBackKey & GetLogstoreKey() const { return logstoreKey; }
     int64_t GetKafkaProducerkey() const { return kafkaProducerKey; }
+    void SetKafkaProducerkey(int64_t kafkaProducerKey_) { kafkaProducerKey = kafkaProducerKey_; }
 
 private:
 

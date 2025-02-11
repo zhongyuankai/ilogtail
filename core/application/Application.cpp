@@ -58,7 +58,7 @@
 #include "config/provider/SwanConfigProvider.h"
 #endif
 
-DEFINE_FLAG_BOOL(ilogtail_disable_core, "disable core in worker process", false);
+DEFINE_FLAG_BOOL(ilogtail_disable_core, "disable core in worker process", true);
 DEFINE_FLAG_STRING(ilogtail_config_env_name, "config file path", "ALIYUN_LOGTAIL_CONFIG");
 DEFINE_FLAG_STRING(app_info_file, "", "app_info.json");
 DEFINE_FLAG_INT32(file_tags_update_interval, "second", 1);

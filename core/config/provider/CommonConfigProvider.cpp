@@ -382,7 +382,7 @@ void CommonConfigProvider::GetSwanConfigUpdate() {
         processConfigChange(addedConfigs, updateConfigs, deleteConfigs);
         LOG_INFO(sLogger, ("end to convert swan config......", ""));
     } catch (const std::exception& e) {
-        LOG_ERROR(sLogger, ("update swan config failed...", std::string(e.what())));
+        LOG_ERROR(sLogger, ("update swan config failed...", e.what()));
     }
 }
 

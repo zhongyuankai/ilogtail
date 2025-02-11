@@ -2292,21 +2292,31 @@ StringView LogFileReader::GetLastLine(StringView buffer, size_t end) {
 #ifdef USE_SIMD_AVX2
     const char * data = buffer.data();
     const size_t vecSize = 32;
-    __m256i newlineVec = _mm256_set1_epi8('\n');
 
-    for (size_t pos = end - vecSize; pos < end; pos -= vecSize) {
-        if (pos > end) {
-            pos = 0;
+    if (end < vecSize) {
+        // 如果数据不足 32 字节，直接线性查找
+        for (size_t begin = end; begin > 0; --begin) {
+            if (buffer[begin - 1] == '\n') {
+                return StringView(buffer.data() + begin, end - begin);
+            }
         }
+    } else {
+        __m256i newlineVec = _mm256_set1_epi8('\n');
+        for (size_t pos = end - vecSize; pos < end; pos -= vecSize) {
+            if (pos > end) {
+                pos = 0;
+            }
 
-        __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i * >(data + pos));
-        __m256i cmp = _mm256_cmpeq_epi8(chunk, newlineVec);
-        int mask = _mm256_movemask_epi8(cmp);
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i * >(data + pos));
+            __m256i cmp = _mm256_cmpeq_epi8(chunk, newlineVec);
+            int mask = _mm256_movemask_epi8(cmp);
 
-        if (mask != 0) {
-            int offset = __builtin_ctz(mask);
-            size_t begin = pos + offset + 1;
-            return StringView(data + begin, end - begin);
+            if (mask != 0) {
+                /// 计算最后一个换行符的位置.
+                int offset = vecSize - __builtin_clz(mask);
+                size_t begin = pos + offset;
+                return StringView(data + begin, end - begin);
+            }
         }
     }
 #else

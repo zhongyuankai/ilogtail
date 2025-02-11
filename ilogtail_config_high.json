@@ -1,0 +1,20 @@
+{
+    "process_thread_count": 8,
+    "kafka_send_thread_count": 2,
+    "send_request_concurrency": 30,
+    "send_max_queue_size": 600,
+    "log_profile_save_interval": 300,
+    "monitor_interval": 40,
+    "read_fs_events_interval": 20000,
+    "config_update_interval": 300,
+    "config_scan_interval": 180,
+    "wildcard_max_sub_dir_count": 10000,
+    "default_max_inotify_watch_num": 10000,
+    "default_accept_multi_config": true,
+    "check_point_filename": ".swan-logOffSet",
+    "ilogtail_topic_prefix": "logtail_survey_",
+    "agent_manager_physical_config_api": "http://10.88.129.57:8000/agent-manager-gz/api/v2/agents/config/host",
+    "agent_manager_container_config_api": "http://10.88.129.57:8000/agent-manager-gz/api/v5/agents/config/model",
+    "ddcloud_pods_api": "http://127.0.0.1:8031/v1/data/pods",
+    "ddcloud_pods_dir_map_api": "http://127.0.0.1:8031/v1/data/pod/dirmap"
+}

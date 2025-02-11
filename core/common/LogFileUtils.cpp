@@ -140,9 +140,6 @@ std::string getMd5ByHostName(std::string plainText, std::string & hostname) {
     return oss.str();
 }
 
-constexpr const char* MD5_FAILED_TAG = "Failed";
-constexpr size_t FILE_HEAD_LENGTH = 1024;
-
 std::string getMd5(const std::string& content) {
     try {
         // 初始化 MD5 对象
@@ -158,7 +155,6 @@ std::string getMd5(const std::string& content) {
             hexResult << chars[(byte >> 4) & 0xF]; // 高四位
             hexResult << chars[byte & 0xF];       // 低四位
         }
-        std::cout << std::endl;
 
         return hexResult.str();
     } catch (const std::exception& e) {

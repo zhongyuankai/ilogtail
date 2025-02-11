@@ -15,8 +15,6 @@ zjyfile=/home/odin/container-cluster
 HOME_DIR=/home/logger
 
 USER=$(id -un)
-STATUS_URL="http://127.0.0.1:2024/ilogtail/version"
-PID_URL="http://127.0.0.1:2024/ilogtail/pid"
 OLD_PATH="/home/logger/ilogtail"
 AGENT_CGEXE="/home/odin/tools/odin-super-agent-cgexe"
 TASK_NAME=ilogtail
@@ -24,8 +22,6 @@ DDCLOUD_PATH="/home/odin/container-host"
 LINUX_VERSION="7.2"
 ZJY_OFFLINE_TAG="\"cluster\":\"zjy-offline\""
 
-export GOMEMLIMIT=5368709120
-export GOGC=off
 
 function linux_version() {
     linux_version=`cat /etc/redhat-release`

@@ -337,15 +337,19 @@ bool CheckAndUpdateSignature(const std::string& signature, uint64_t& sigHash, ui
 
 bool CheckAndUpdateSignatureV3(const std::string & signature, std::string & oldSignature) {
     if (oldSignature.empty()) {
-        oldSignature = getMd5(signature);
+        if (signature.empty()) {
+            oldSignature = "";
+        } else {
+            oldSignature = getMd5(signature);
+        }
         return true;
     }
     if (signature.empty()) {
-        oldSignature = "Failed";
+        oldSignature = "";
         return false;
     }
     std::string sig = getMd5(signature);
-    if (sig == oldSignature && sig != "Failed") {
+    if (sig == oldSignature && sig != MD5_FAILED_TAG) {
         oldSignature = sig;
         return true;
     }

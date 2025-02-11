@@ -70,96 +70,94 @@ bool FlusherKafka::Init(const Json::Value& config, Json::Value& optionalGoPipeli
                            mContext->GetRegion());
     }
     
-    if (!GetMandatoryStringParam(config, "OriginalAppName", originalAppName, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalStringParam(config, "OriginalAppName", originalAppName, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryStringParam(config, "OdinLeaf", odinLeaf, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalStringParam(config, "OdinLeaf", odinLeaf, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryIntParam(config, "LogId", logId, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalIntParam(config, "LogId", logId, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryStringParam(config, "AppName", appName, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalStringParam(config, "AppName", appName, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryStringParam(config, "QueryFrom", queryFrom, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalStringParam(config, "QueryFrom", queryFrom, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryIntParam(config, "IsService", isService, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalIntParam(config, "IsService", isService, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
     if (!GetOptionalStringParam(config, "DIDIENV_ODIN_SU", DIDIENV_ODIN_SU, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    if (!GetMandatoryIntParam(config, "PathId", pathId, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (!GetOptionalIntParam(config, "PathId", pathId, errorMsg)) {
+        PARAM_WARNING_IGNORE(mContext->GetLogger(),
+                             mContext->GetAlarm(),
+                             errorMsg,
+                             sName,
+                             mContext->GetConfigName(),
+                             mContext->GetProjectName(),
+                             mContext->GetLogstoreName(),
+                             mContext->GetRegion());
     }
 
-    std::string key = brokers + "_" + username + "_" + password;
-    kafkaProducerKey = HashString(key);
     configName = mContext->GetConfigName();
     logstoreKey = GenerateLogstoreFeedBackKey(configName, "");
 

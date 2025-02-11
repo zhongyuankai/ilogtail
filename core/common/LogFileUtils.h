@@ -4,6 +4,9 @@
 
 namespace logtail {
 
+constexpr const char * MD5_FAILED_TAG = "Failed";
+constexpr size_t FILE_HEAD_LENGTH = 1024;
+
 /** 截取行中时间字符串 */
 StringView getTimeStringFromLineByIndex(const char* buffer, size_t size, const std::string & startFlag, int32_t startFlagIndex, int32_t timeFormatLength);
 

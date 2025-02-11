@@ -472,7 +472,7 @@ void EventDispatcher::AddExistedFileEventsV3(const char* path, int wd) {
                 logFileOp.Open(item.c_str());
                 if (!logFileOp.IsOpen()) {
                     LOG_ERROR(sLogger, ("open file failed, file", item));
-                    fileHeadMd5 = "Failed";
+                    fileHeadMd5 = MD5_FAILED_TAG;
                 } else {
                     std::string firstLine = readFirstLine(logFileOp);
                     CheckAndUpdateSignatureV3(firstLine, fileHeadMd5);
@@ -481,7 +481,7 @@ void EventDispatcher::AddExistedFileEventsV3(const char* path, int wd) {
                 if (auto it = checkPoints.find(fileKey); it != checkPoints.end()) {
                     CheckPointPtr checkPoint = it->second;
                     checkPoint->mFileName = fileNode.mFileName;
-                    if (fileHeadMd5 != checkPoint->mFileHeadMd5 || fileHeadMd5 == "Failed") {
+                    if (fileHeadMd5 != checkPoint->mFileHeadMd5 || fileHeadMd5 == MD5_FAILED_TAG) {
                         LOG_INFO(sLogger, ("FileKey is the same, MD5 is different, which means that Inode has been reused! filePath", item)
                             ("fileKey", fileKey)("newMd5", fileHeadMd5)("oldMd5", it->second->mFileHeadMd5));
                         checkPoint->mFileHeadMd5 = fileHeadMd5;

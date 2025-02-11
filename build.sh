@@ -27,7 +27,7 @@ then
 
   rm -rf "${ROOTDIR}/core/build"
   mkdir "${ROOTDIR}/core/build" && cd "${ROOTDIR}/core/build"
-  cmake .. -DCMAKE_BUILD_TYPE=Release -DLOGTAIL_VERSION=2.0.7 -DBUILD_LOGTAIL_UT=OFF -DENABLE_COMPATIBLE_MODE=OFF -DENABLE_STATIC_LINK_CRT=ON -DWITHOUTGDB==OFF
+  cmake .. -DCMAKE_BUILD_TYPE=Release -DLOGTAIL_VERSION=2.0.7 -DBUILD_LOGTAIL_UT=OFF -DENABLE_COMPATIBLE_MODE=OFF -DENABLE_STATIC_LINK_CRT=ON -DWITHOUTGDB==OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 else
   cd ${ROOTDIR}/core/build
 fi
@@ -41,6 +41,7 @@ echo -e "build done."
 mkdir -p "${ROOTDIR}/${OUT_DIR}"
 cp "${ROOTDIR}/core/build/ilogtail" "${ROOTDIR}/${OUT_DIR}"
 cp "${ROOTDIR}/ilogtail_config.json" "${ROOTDIR}/${OUT_DIR}"
+cp "${ROOTDIR}/ilogtail_config_high.json" "${ROOTDIR}/${OUT_DIR}"
 cp "${ROOTDIR}/control" "${ROOTDIR}/${OUT_DIR}"
 
 # 4. 准备dist目录
@@ -48,6 +49,7 @@ rm -fr "${ROOTDIR}/${DIST_DIR}"
 mkdir -p "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/ilogtail_config.json" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
+cp "${ROOTDIR}/${OUT_DIR}/ilogtail_config_high.json" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 cp "${ROOTDIR}/${OUT_DIR}/control" "${ROOTDIR}/${DIST_DIR}/${PACKAGE_DIR}"
 
 # 5. 去除符号信息，打包dist

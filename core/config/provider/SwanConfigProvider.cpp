@@ -1,9 +1,11 @@
 #include "config/provider/SwanConfigProvider.h"
 
+#include "Flags.h"
 #include "app_config/AppConfig.h"
 #include "common/MachineInfoUtil.h"
 #include "common/LogFileUtils.h"
 #include "common/StringTools.h"
+#include "common/LogtailCommonFlags.h"
 #include "restclient-cpp/restclient.h"
 #include "Logger.h"
 
@@ -19,6 +21,7 @@
 #include <string>
 #include <regex>
 
+DEFINE_FLAG_STRING(ilogtail_topic_prefix, "", "");
 
 namespace logtail {
 
@@ -260,7 +263,11 @@ void SwanConfigProvider::convertContainerConfigs(std::string & serviceName,
 
         swanConfig.username = auth.first;
         swanConfig.password = auth.second;
-        swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
+        if (!STRING_FLAG(ilogtail_topic_prefix).empty()) {
+            swanConfig.topic = STRING_FLAG(ilogtail_topic_prefix) + targetConfig["topic"].asString();
+        } else {
+            swanConfig.topic = targetConfig["topic"].asString();
+        }
         swanConfig.brokers = targetProperties["gateway"];
         std::replace(swanConfig.brokers.begin(), swanConfig.brokers.end(), ';', ',');
         swanConfig.hostName = containerName;
@@ -381,7 +388,12 @@ void SwanConfigProvider::generateDirectConfigs(const std::string & hostname) {
             auto auth = getUsernamePasswd(sendMQProperties["sasl_jaas_config"]);
             // std::string fileSuffix = sourceConfig["matchConfig"]["fileSuffix"].asString();
 
-            swanConfig.topic = "logtail_survey_" + targetConfig["topic"].asString();
+            if (!STRING_FLAG(ilogtail_topic_prefix).empty()) {
+                swanConfig.topic = STRING_FLAG(ilogtail_topic_prefix) + targetConfig["topic"].asString();
+            } else {
+                swanConfig.topic = targetConfig["topic"].asString();
+            }
+
             swanConfig.brokers = sendMQProperties["gateway"];
             std::replace(swanConfig.brokers.begin(), swanConfig.brokers.end(), ';', ',');
             swanConfig.originalAppName = eventMetricsConfig["originalAppName"].asString();
@@ -489,20 +501,20 @@ std::unordered_map<std::string, std::string> & SwanConfigProvider::getConfigs() 
         generateDirectConfigs(hostname);
     }
     catch(const std::exception& e) {
+        LOG_WARNING(sLogger, ("generate direct configs failed.", e.what()));
         if (!isDDCloudHost(hostname)) {
             throw e;
         }
-        LOG_ERROR(sLogger, ("generate direct configs failed.", e.what()));
     }
 
     try {
         // 3. 获取容器的任务配置
         generateContainerConfigs(hostname);
     } catch(const std::exception& e) {
+        LOG_WARNING(sLogger, ("generate container configs failed.", e.what()));
         if (configs.empty()) {
             throw e;
         }
-        LOG_ERROR(sLogger, ("generate container configs failed.", e.what()));
         return configs;
     }
 

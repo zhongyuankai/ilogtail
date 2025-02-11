@@ -107,11 +107,14 @@ private:
 
     KafkaSenderQueue mSenderQueue;
 
-    std::mutex kafkaProducersMutex;
-    std::unordered_map<int64_t, std::shared_ptr<KafkaProducerEntry>> kafkaProducers;
+    std::mutex mKafkaProducersMutex;
+    std::unordered_map<int64_t, std::shared_ptr<KafkaProducerEntry>> mKafkaProducers;
+    std::unordered_map<std::string, int32_t> mKafkaClusterCounter;
+    std::unordered_map<LogstoreFeedBackKey, int32_t> mLogstoreKafkaProducerMap;
+
     int32_t mThreadNo = 0;
     std::atomic_int mMetricThreadNo{0};
-    bool needClearThead = false;
+    bool mNeedClearThead = false;
 };
 
 } // namespace logtail

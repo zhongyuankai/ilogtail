@@ -46,7 +46,7 @@ DEFINE_FLAG_INT32(default_local_file_size, "default size of one buffer file", 20
 DEFINE_FLAG_INT32(pub_local_file_size, "default size of one buffer file", 20 * 1024 * 1024);
 DEFINE_FLAG_INT32(process_thread_count, "", 1);
 DEFINE_FLAG_INT32(send_request_concurrency, "max count keep in mem when async send", 10);
-DEFINE_FLAG_INT32(send_max_queue_size, "send queue max size", 600);
+DEFINE_FLAG_INT32(send_max_queue_size, "send queue max size", 300);
 DEFINE_FLAG_BOOL(enable_send_tps_smoothing, "avoid web server load burst", true);
 DEFINE_FLAG_BOOL(enable_flow_control, "if enable flow control", true);
 DEFINE_FLAG_STRING(default_buffer_file_path, "set current execution dir in default", "");

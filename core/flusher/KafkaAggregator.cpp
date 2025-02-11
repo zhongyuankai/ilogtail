@@ -65,6 +65,10 @@ bool KafkaAggregator::Add(std::vector<PipelineEventGroup> & eventGroupList, size
 }
 
 bool KafkaAggregator::SendData(std::vector<PipelineEventGroup> & eventGroupList, MergeEntryPtr & entry) {
+    if (eventGroupList.empty()) {
+        return true;
+    }
+
     sonic_json::Document doc;
     auto & alloc = doc.GetAllocator();
     doc.SetArray();
